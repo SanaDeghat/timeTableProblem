@@ -4,3 +4,5 @@ class Class:
         self.roomNumber = roomNumber
     def print(self):
         print(self.name, self.roomNumber)
+
+print("hi")
