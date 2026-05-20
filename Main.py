@@ -3,6 +3,7 @@ import pandas as pd
 from Student import Student 
 from Class import Class 
 
-S = Student(1234)
-S.print()
+def main(): 
+    S = Student(1234)
+    S.print()
 
