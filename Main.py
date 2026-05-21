@@ -8,8 +8,6 @@ def main():
     students = {}
     fileName = "Course Selection by student"
 
-    # studentData = getFile("Course Selection by student")
-
     with open(f"DataFiles/{fileName}.csv", mode='r') as file:
         data = csv.reader(file)
         next(data, None)
