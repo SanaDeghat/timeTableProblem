@@ -10,5 +10,3 @@ class Student:
         print(self.yog)
         print(self.requestedCourses)
         print(self.assignedCourses)
-
-
