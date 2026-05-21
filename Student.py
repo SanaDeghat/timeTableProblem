@@ -1,8 +1,10 @@
 class Student:
-    def __init__(self, id, courses, yog):
+    def __init__(self, id, yog, courses):
         self.id = id
-        self.courses = courses
         self.yog = yog
+        self.courses = courses
 
     def print(self):
-        print(self.id + " " + self.gradDate)
+        print(self.id)
+        print(self.yog)
+        print(self.courses)
