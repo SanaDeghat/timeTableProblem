@@ -3,6 +3,9 @@ import pandas as pd
 from Student import Student 
 from Class import Class 
 
+students = []
+courses = []
+
 def main(): 
     S = Student(1234)
     S.print()
