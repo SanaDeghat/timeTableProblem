@@ -1,25 +1,20 @@
 import csv
 
-from Student import Student
-from Class import Class
+from Student import Student 
+from Class import Class 
 
-def main():
-    students = {}
-    fileName = "Course Selection by student"
+students = []
+courses = []
 
-    # studentData = getFile("Course Selection by student")
+def main(): 
+    S = Student(1234)
+    S.print()
 
-    with open(f"DataFiles/{fileName}.csv", mode='r') as file:
-        data = csv.reader(file)
-        next(data, None)
-
-        for stu in data:
-            id = stu[0]
-            students[id] = Student(id, stu[1])
-       
-    for student in students.values():
-        student.print()
-    
+# returns a 2D labeled table with rows and columns
+def getFile(fileName):
+    df = pd.read_csv(fileName + '.csv')
+    return df
 
 if __name__ == "__main__":
     main()
+    

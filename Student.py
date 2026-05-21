@@ -11,4 +11,5 @@ class Student:
         print(self.requestedCourses)
         print(self.assignedCourses)
 
-
+    def createTimetable():
+        print("")
