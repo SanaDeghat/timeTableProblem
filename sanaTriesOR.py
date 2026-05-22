@@ -9,6 +9,25 @@ from Class import Class
 NUM_BLOCKS = 8
 
 
+def main():
+    courses = load_courses("DataFiles/Course Number of Sections.csv")
+    students = load_students("DataFiles/Course Selection by student.csv")
+
+    print_data_structures(courses, students)
+
+    status, obj = solve(students, time_limit_s=15.0)
+    print("Solve status:", status)
+    print()
+
+    print_master_preview(students, limit=25)
+    export_master_csv(students, "master_timetable.csv")
+    print("Exported master_timetable.csv\n")
+
+    metrics(students, obj)
+
+    print_one_student(students, student_id=None)
+
+
 def load_courses(course_csv_path: str):
     """
     Returns dict[name, Class] 
@@ -209,25 +228,6 @@ def print_one_student(students: list, student_id=None):
     for b in range(NUM_BLOCKS):
         print(f"  Block {b+1}: {st.assignedCourses[b] if st.assignedCourses[b] is not None else 'NULL'}")
     print()
-
-
-def main():
-    courses = load_courses("DataFiles/Course Number of Sections.csv")
-    students = load_students("DataFiles/Course Selection by student.csv")
-
-    print_data_structures(courses, students)
-
-    status, obj = solve(students, time_limit_s=15.0)
-    print("Solve status:", status)
-    print()
-
-    print_master_preview(students, limit=25)
-    export_master_csv(students, "master_timetable.csv")
-    print("Exported master_timetable.csv\n")
-
-    metrics(students, obj)
-
-    print_one_student(students, student_id=None)
 
 
 if __name__ == "__main__":
