@@ -25,3 +25,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    Class.getname("CS101")

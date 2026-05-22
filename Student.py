@@ -1,9 +1,10 @@
 class Student:
-    def __init__(self, id, yog, requestedCourses, assignedCourses):
-        self.id = id
-        self.yog = yog
-        self.requestedCourses = requestedCourses
-        self.assignedCourses = assignedCourses
+    def __init__(self, id, yog, requestedCourses=None, assignedCourses=None):
+        self.id = int(id)
+        self.yog = int(yog)
+        self.requestedCourses = requestedCourses if requestedCourses is not None else []
+        # 8 blocks; None means NULL/unassigned
+        self.assignedCourses = assignedCourses if assignedCourses is not None else [None] * 8
 
     def print(self):
         print(self.id)
@@ -11,5 +12,5 @@ class Student:
         print(self.requestedCourses)
         print(self.assignedCourses)
 
-    def createTimetable():
-        print("")
+    def __repr__(self):
+        return f"Student(id={self.id}, yog={self.yog}, requested={len(self.requestedCourses)})"
