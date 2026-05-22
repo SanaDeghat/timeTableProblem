@@ -61,7 +61,7 @@ def load_students(student_csv_path: str):
 
 
 def print_data_structures(courses: dict, students: list):
-    print("data")
+    print("=== Data Handling & Representation ===")
     print(f"Courses structure: dict[str, Class], size={len(courses)}")
     if courses:
         first_key = next(iter(courses))
@@ -79,16 +79,22 @@ def print_data_structures(courses: dict, students: list):
     timetable = {st.id: [None] * NUM_BLOCKS for st in students}
     print(f"Timetable structure: dict[int, list[Optional[str]]], size={len(timetable)}")
     if students:
-        print("Timetable sample:", {students[50].id: timetable[students[50].id]})
+        print("Timetable sample:", {students[0].id: timetable[students[0].id]})
     print()
 
 
 def solve(students: list, time_limit_s: float = 15.0):
-    
+    """
+    Milestone 1:
+      - Each student block: 0 or 1 course from requestedCourses
+      - No repeats of the same request entry (index-based)
+      - If fewer than 8 requests, remaining blocks can be NULL
+      - Objective: fill blocks, then use priority order (earlier is better)
+    """
     model = cp_model.CpModel()
 
-    x = {}    
-    take = {}  \
+    x = {}      # x[(i,b,k)] = 1 if student i takes requested[k] in block b
+    take = {}   # take[(i,b)] = 1 if block b is filled
 
     for i, st in enumerate(students):
         m = len(st.requestedCourses)
