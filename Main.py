@@ -10,14 +10,6 @@ def main():
     S = Student(1234)
     S.print()
 
-# returns a 2D labeled table with rows and columns
-def getFile(fileName):
-    df = pd.read_csv(fileName + '.csv')
-    return df
-
-if __name__ == "__main__":
-    main()
-
     # dict of all students in this format: {"id" : Student Obj}
     students = {}
     fileName = "Course Selection by student"
@@ -35,6 +27,7 @@ if __name__ == "__main__":
         
     for s in students:
         students[s].print()
+
 
 if __name__ == "__main__":
     main()
