@@ -1,13 +1,13 @@
 class Class:
-    def __init__(self, name, roomNumber, numOfStudents, block, semester):
+    def __init__(self, code, name, department, requestedPrimary, requestedAlt, capacity, section):
+        self.code = code
         self.name = name
-        self.roomNumber = roomNumber
-        self.numOfStudents = numOfStudents
-        self.block = block
-        self.semester = semester
+        self.department = department
+        self.requestedPrimary = requestedPrimary
+        self.requestedAlt = requestedAlt
+        self.capacity = capacity
+        self.section = section
 
     def print(self):
-        print(self.id, self.description, self.sections)
+        print(self.code, self.name, self.department, self.requestedPrimary, self.requestedAlt, self.capacity, self.section)
 
-    def __repr__(self):
-        return f"Class(id={self.id}, sections={self.sections})"

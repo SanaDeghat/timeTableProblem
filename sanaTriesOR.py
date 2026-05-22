@@ -9,32 +9,47 @@ from Class import Class
 NUM_BLOCKS = 8
 
 
-def load_courses(course_csv_path: str):
-    """
-    Returns dict[name, Class] 
-    """
+import csv
+
+def load_courses():
+    course_csv_path="DataFiles/Course Tally.csv"
     courses = {}
-    with open(course_csv_path, newline="", encoding="utf-8-sig") as f:
+
+    def _to_int_sections(value: str) -> int:
+        value = (value or "").strip()
+        if not value:
+            return 0
+        try:
+            return int(float(value))
+        except ValueError:
+            return 0
+
+    with open(course_csv_path) as f:
         reader = csv.reader(f)
         for row in reader:
+            print("Raw row:", row)
             if not row or len(row) < 3:
                 continue
-
             code = (row[1] or "").strip() if len(row) > 1 else ""
-            desc = (row[2] or "").strip() if len(row) > 2 else ""
-            if not code or "-" not in code:
+            print(row[3].strip())
+            description = (row[2] or "").strip() if len(row) > 2 else ""
+            department = (row[3] or "guess whos lowing their mind").strip() if len(row) > 3 else "hahahahaha"
+            if not code or "-" not in code or code.lower() == "number":
                 continue
-
-            sections = 0
-            if len(row) > 4:
-                sec_str = (row[4] or "").strip()
-                if sec_str.isdigit():
-                    sections = int(sec_str)
-
             if code not in courses:
-                courses[code] = Class(id=code, description=desc, sections=sections)
+                courses[code] = Class(
+                    code=code,
+                    name=description,
+                    department=department,     # this should be the department column, not the description
+                    requestedPrimary= _to_int_sections(row[4] if len(row) > 6 else "98"),
+                    requestedAlt=_to_int_sections(row[5])- _to_int_sections(row[4]),
+                    capacity=_to_int_sections(row[6]),
+                    section=_to_int_sections(row[7])
+                )
+                courses[code].print()
+                print(code)
 
-    return courses
+    
 
 
 def load_students(student_csv_path: str):
@@ -212,7 +227,7 @@ def print_one_student(students: list, student_id=None):
 
 
 def main():
-    courses = load_courses("DataFiles/Course Number of Sections.csv")
+    courses = load_courses()
     students = load_students("DataFiles/Course Selection by student.csv")
 
     print_data_structures(courses, students)
@@ -231,4 +246,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    load_courses()
