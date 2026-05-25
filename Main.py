@@ -83,7 +83,7 @@ def solve(students: list, time_limit_s: float = 15.0):
 
 
 def load_courses():
-    course_csv_path="DataFiles/CourseTally.csv"
+    course_csv_path="DataFiles/Course Tally.csv"
     courses = {}
 
     def _to_int_sections(value: str) -> int:
@@ -184,7 +184,10 @@ def print_master_preview(students: list, limit: int = 25):
     print("=== Master Timetable (preview) ===")
     print("StudentID | YOG | " + " | ".join([f"B{b+1}" for b in range(NUM_BLOCKS)]))
     for st in students[:limit]:
-        blocks = " | ".join([(c if c is not None else "NULL") for c in st.assignedCourses])
+        blocks = " | ".join([
+            (c.getName() if c is not None else "NULL")
+            for c in st.assignedCourses
+        ])
         print(f"{st.id} | {st.yog} | {blocks}")
     if len(students) > limit:
         print(f"... ({len(students) - limit} more students not shown)")

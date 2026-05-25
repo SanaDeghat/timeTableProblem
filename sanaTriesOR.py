@@ -49,29 +49,31 @@ def load_courses():
     
 
 
-def load_students(student_csv_path: str):
+def load_students(student_csv_path: str, courses: dict):
 
     students = []
+
     with open(student_csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
+
         course_cols = [c for c in (reader.fieldnames or []) if c and c.startswith("C")]
-        course_cols.sort(key=lambda x: int(x[1:])) 
+        course_cols.sort(key=lambda x: int(x[1:]))
 
         for row in reader:
             sid = row["ID"]
             yog = row["YOG"]
 
             requested = []
+
             for c in course_cols:
                 val = (row.get(c) or "").strip()
-                if val:
-                    requested.append(val)
+
+                if val and val in courses:
+                    requested.append(courses[val])
 
             students.append(Student(sid, yog, requested))
 
     return students
-
-
 def print_data_structures(courses: dict, students: list):
     print("data")
     print(f"Courses structure: dict[str, Class], size={len(courses)}")
@@ -159,7 +161,10 @@ def export_master_csv(students: list, out_path: str):
         w = csv.writer(f)
         w.writerow(header)
         for st in students:
-            row = [st.id, st.yog] + [(c if c is not None else "NULL") for c in st.assignedCourses]
+            row = [st.id, st.yog] + [
+                (c.getName() if c is not None else "NULL")
+                for c in st.assignedCourses
+            ]
             w.writerow(row)
 
 
@@ -167,7 +172,10 @@ def print_master_preview(students: list, limit: int = 25):
     print("=== Master Timetable (preview) ===")
     print("StudentID | YOG | " + " | ".join([f"B{b+1}" for b in range(NUM_BLOCKS)]))
     for st in students[:limit]:
-        blocks = " | ".join([(c if c is not None else "NULL") for c in st.assignedCourses])
+        blocks = " | ".join([
+            (c.getName() if c is not None else "NULL")
+            for c in st.assignedCourses
+        ])
         print(f"{st.id} | {st.yog} | {blocks}")
     if len(students) > limit:
         print(f"... ({len(students) - limit} more students not shown)")
@@ -219,13 +227,18 @@ def print_one_student(students: list, student_id=None):
     print("=== Full timetable for one student ===")
     print(f"Student {st.id} (YOG {st.yog})")
     for b in range(NUM_BLOCKS):
-        print(f"  Block {b+1}: {st.assignedCourses[b] if st.assignedCourses[b] is not None else 'NULL'}")
+        course = st.assignedCourses[b]
+
+        print(
+            f"  Block {b+1}: "
+            f"{course.getName() if course is not None else 'NULL'}"
+        )
     print()
 
 
 def main():
     courses = load_courses()
-    students = load_students("DataFiles/Course Selection by student.csv")
+    students = load_students("DataFiles/Course Selection by student.csv", courses)
 
     print_data_structures(courses, students)
 
