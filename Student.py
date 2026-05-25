@@ -3,7 +3,6 @@ class Student:
         self.id = int(id)
         self.yog = int(yog)
         self.requestedCourses = requestedCourses if requestedCourses is not None else []
-        # 8 blocks; None means NULL/unassigned
         self.assignedCourses = assignedCourses if assignedCourses is not None else [None] * 8
 
     def print(self):

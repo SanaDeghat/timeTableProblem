@@ -121,7 +121,7 @@ def solve(students: list, time_limit_s: float = 15.0):
         for k in range(m):
             model.AddAtMostOne(x[(i, b, k)] for b in range(NUM_BLOCKS))
 
-    BIG = 1000
+    BIG = 100000
     objective_terms = []
     for (i, b), t in take.items():
         objective_terms.append(-BIG * t)

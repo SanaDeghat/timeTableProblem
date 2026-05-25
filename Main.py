@@ -7,6 +7,15 @@ from Class import Class
 
 
 NUM_BLOCKS = 8
+import csv
+import random
+from ortools.sat.python import cp_model
+
+from Student import Student
+from Class import Class
+
+
+NUM_BLOCKS = 8
 
 
 def main():
@@ -16,6 +25,13 @@ def main():
     print_data_structures(courses, students)
 
     status, obj = solve(students, time_limit_s=15.0)
+    # convert assigned course codes to Class objects (use course name for display)
+    for st in students:
+        for i, code in enumerate(st.assignedCourses):
+            if code is None:
+                continue
+            if isinstance(code, str) and code in courses:
+                st.assignedCourses[i] = courses[code]
     print("Solve status:", status)
     print()
 
@@ -30,7 +46,6 @@ def main():
 
 
 def solve(students: list, time_limit_s: float = 15.0):
-    
     model = cp_model.CpModel()
 
     timetables = {}
@@ -38,10 +53,8 @@ def solve(students: list, time_limit_s: float = 15.0):
     # creates variables
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
-
             course = student.requestedCourses
             for c in course:
-
                 timetables[(s, b, c)] = model.NewBoolVar(f"table_s{s}_b{b}_c{c}")
 
     # constraint 1: student dosent have more than 1 course per block
@@ -83,7 +96,7 @@ def solve(students: list, time_limit_s: float = 15.0):
 
 
 def load_courses():
-    course_csv_path="DataFiles/Course Tally.csv"
+    course_csv_path = "DataFiles/Course Tally.csv"
     courses = {}
 
     def _to_int_sections(value: str) -> int:
@@ -102,7 +115,8 @@ def load_courses():
             if not row or len(row) < 3:
                 continue
             code = (row[1] or "").strip() if len(row) > 1 else ""
-            print(row[3].strip())
+            if len(row) > 3:
+                print(row[3].strip())
             description = (row[2] or "").strip() if len(row) > 2 else ""
             department = (row[3] or "guess whos lowing their mind").strip() if len(row) > 3 else "hahahahaha"
             if not code or "-" not in code or code.lower() == "number":
@@ -111,26 +125,23 @@ def load_courses():
                 courses[code] = Class(
                     code=code,
                     name=description,
-                    department=department,     # this should be the department column, not the description
-                    requestedPrimary= _to_int_sections(row[4] if len(row) > 6 else "98"),
-                    requestedAlt=_to_int_sections(row[5])- _to_int_sections(row[4]),
-                    capacity=_to_int_sections(row[6]),
-                    section=_to_int_sections(row[7])
+                    department=department,
+                    requestedPrimary=_to_int_sections(row[4] if len(row) > 6 else "98"),
+                    requestedAlt=_to_int_sections(row[5]) - _to_int_sections(row[4]) if len(row) > 5 else 0,
+                    capacity=_to_int_sections(row[6]) if len(row) > 6 else 0,
+                    section=_to_int_sections(row[7]) if len(row) > 7 else 0,
                 )
                 courses[code].print()
                 print(code)
     return courses
 
-    
-
 
 def load_students(student_csv_path: str):
-
     students = []
     with open(student_csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         course_cols = [c for c in (reader.fieldnames or []) if c and c.startswith("C")]
-        course_cols.sort(key=lambda x: int(x[1:])) 
+        course_cols.sort(key=lambda x: int(x[1:]))
 
         for row in reader:
             sid = row["ID"]
@@ -166,7 +177,8 @@ def print_data_structures(courses: dict, students: list):
     timetable = {st.id: [None] * NUM_BLOCKS for st in students}
     print(f"Timetable structure: dict[int, list[Optional[str]]], size={len(timetable)}")
     if students:
-        print("Timetable sample:", {students[50].id: timetable[students[50].id]})
+        sample_idx = 50 if len(students) > 50 else 0
+        print("Timetable sample:", {students[sample_idx].id: timetable[students[sample_idx].id]})
     print()
 
 
@@ -176,7 +188,7 @@ def export_master_csv(students: list, out_path: str):
         w = csv.writer(f)
         w.writerow(header)
         for st in students:
-            row = [st.id, st.yog] + [(c if c is not None else "NULL") for c in st.assignedCourses]
+            row = [st.id, st.yog] + [((c.getName() if hasattr(c, 'getName') else str(c)) if c is not None else "NULL") for c in st.assignedCourses]
             w.writerow(row)
 
 
@@ -184,10 +196,7 @@ def print_master_preview(students: list, limit: int = 25):
     print("=== Master Timetable (preview) ===")
     print("StudentID | YOG | " + " | ".join([f"B{b+1}" for b in range(NUM_BLOCKS)]))
     for st in students[:limit]:
-        blocks = " | ".join([
-            (c.getName() if c is not None else "NULL")
-            for c in st.assignedCourses
-        ])
+        blocks = " | ".join([((c.getName() if hasattr(c, 'getName') else str(c)) if c is not None else "NULL") for c in st.assignedCourses])
         print(f"{st.id} | {st.yog} | {blocks}")
     if len(students) > limit:
         print(f"... ({len(students) - limit} more students not shown)")
@@ -239,7 +248,9 @@ def print_one_student(students: list, student_id=None):
     print("=== Full timetable for one student ===")
     print(f"Student {st.id} (YOG {st.yog})")
     for b in range(NUM_BLOCKS):
-        print(f"  Block {b+1}: {st.assignedCourses[b] if st.assignedCourses[b] is not None else 'NULL'}")
+        c = st.assignedCourses[b]
+        display = (c.getName() if hasattr(c, 'getName') else str(c)) if c is not None else 'NULL'
+        print(f"  Block {b+1}: {display}")
     print()
 
 
