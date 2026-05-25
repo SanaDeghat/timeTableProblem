@@ -11,3 +11,5 @@ class Class:
     def print(self):
         print(self.code, self.name, self.department, self.requestedPrimary, self.requestedAlt, self.capacity, self.section)
 
+    def getName(self):
+        return self.name

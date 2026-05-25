@@ -27,11 +27,9 @@ def load_courses():
     with open(course_csv_path) as f:
         reader = csv.reader(f)
         for row in reader:
-            print("Raw row:", row)
             if not row or len(row) < 3:
                 continue
             code = (row[1] or "").strip() if len(row) > 1 else ""
-            print(row[3].strip())
             description = (row[2] or "").strip() if len(row) > 2 else ""
             department = (row[3] or "guess whos lowing their mind").strip() if len(row) > 3 else "hahahahaha"
             if not code or "-" not in code or code.lower() == "number":
@@ -40,14 +38,13 @@ def load_courses():
                 courses[code] = Class(
                     code=code,
                     name=description,
-                    department=department,     # this should be the department column, not the description
+                    department=department,     
                     requestedPrimary= _to_int_sections(row[4] if len(row) > 6 else "98"),
                     requestedAlt=_to_int_sections(row[5])- _to_int_sections(row[4]),
                     capacity=_to_int_sections(row[6]),
                     section=_to_int_sections(row[7])
                 )
-                courses[code].print()
-                print(code)
+    return courses
 
     
 
@@ -242,8 +239,8 @@ def main():
 
     metrics(students, obj)
 
-    print_one_student(students, student_id=None)
+    print_one_student(students, student_id=1798)
 
 
 if __name__ == "__main__":
-    load_courses()
+   main()
