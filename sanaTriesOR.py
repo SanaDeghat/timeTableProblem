@@ -20,7 +20,7 @@ NUM_BLOCKS = 8
 
 def main():
     courses = load_courses()
-    students = load_students("DataFiles/Course Selection by student.csv")
+    students = load_students("DataFiles/cleanedstudentrequests.csv")
 
     print_data_structures(courses, students)
 
@@ -38,6 +38,8 @@ def main():
     print_master_preview(students, limit=25)
     export_master_csv(students, "master_timetable.csv")
     print("Exported master_timetable.csv\n")
+
+    print_courses_by_block(students)
 
     metrics(students, obj)
 
@@ -139,22 +141,41 @@ def load_courses():
 def load_students(student_csv_path: str):
     students = []
     with open(student_csv_path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        course_cols = [c for c in (reader.fieldnames or []) if c and c.startswith("C")]
-        course_cols.sort(key=lambda x: int(x[1:]))
-
+        reader = csv.reader(f)
+        current_student_id = None
+        current_grade = None
+        current_courses = []
+        
         for row in reader:
-            sid = row["ID"]
-            yog = row["YOG"]
-
-            requested = []
-            for c in course_cols:
-                val = (row.get(c) or "").strip()
-                if val:
-                    requested.append(val)
-
-            students.append(Student(sid, yog, requested))
-
+            if not row or len(row) < 2:
+                continue
+            
+            # Check if this is a student ID row
+            if row[0] == "ID":
+                # Save previous student if exists
+                if current_student_id is not None:
+                    students.append(Student(current_student_id, current_grade, current_courses))
+                    current_courses = []
+                
+                # Parse new student
+                current_student_id = row[1].strip() if len(row) > 1 else None
+                current_grade = row[3].strip() if len(row) > 3 else None
+            
+            # Skip header and empty rows
+            elif row[0] == "Course" or not row[0].strip():
+                continue
+            
+            # This is a course row
+            elif current_student_id is not None and row[0].strip():
+                course_code = row[0].strip()
+                # Only add if it looks like a course code (contains dash)
+                if "-" in course_code and course_code.upper() != "COURSE":
+                    current_courses.append(course_code)
+        
+        # Don't forget the last student
+        if current_student_id is not None:
+            students.append(Student(current_student_id, current_grade, current_courses))
+    
     return students
 
 
@@ -201,6 +222,51 @@ def print_master_preview(students: list, limit: int = 25):
     if len(students) > limit:
         print(f"... ({len(students) - limit} more students not shown)")
     print()
+
+
+def print_courses_by_block(students: list):
+    courses_by_block = {b: set() for b in range(NUM_BLOCKS)}
+    
+    for st in students:
+        for b in range(NUM_BLOCKS):
+            c = st.assignedCourses[b]
+            if c is not None:
+                course_name = c.getName() if hasattr(c, 'getName') else str(c)
+                courses_by_block[b].add(course_name)
+    
+    for b in range(NUM_BLOCKS):
+        courses = sorted(list(courses_by_block[b]))
+       
+
+    
+    export_courses_by_block_csv(courses_by_block, "courses_by_block.csv")
+
+
+def export_courses_by_block_csv(courses_by_block: dict, out_path: str):
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        
+        # Write header row with block names
+        header = [f"Block {b+1}" for b in range(NUM_BLOCKS)]
+        w.writerow(header)
+        
+        # Get sorted courses for each block
+        all_block_courses = [sorted(list(courses_by_block[b])) for b in range(NUM_BLOCKS)]
+        
+        # Find max number of courses in any block
+        max_courses = max(len(courses) for courses in all_block_courses) if all_block_courses else 0
+        
+        # Write each row with one course per column
+        for row_idx in range(max_courses):
+            row = []
+            for b in range(NUM_BLOCKS):
+                if row_idx < len(all_block_courses[b]):
+                    row.append(all_block_courses[b][row_idx])
+                else:
+                    row.append("")
+            w.writerow(row)
+    
+    print(f"Exported {out_path}\n")
 
 
 def metrics(students: list, objective_value: float):
