@@ -1,14 +1,6 @@
 import csv
 import random
-from ortools.sat.python import cp_model
-
-from Student import Student
-from Class import Class
-
-
-NUM_BLOCKS = 8
-import csv
-import random
+import math
 from ortools.sat.python import cp_model
 
 from Student import Student
@@ -20,11 +12,12 @@ NUM_BLOCKS = 8
 
 def main():
     courses = load_courses()
+    rooms_by_dept = load_rooms("DataFiles/Staff list with rooms.csv")
     students = load_students("DataFiles/Course Selection by student.csv")
 
     print_data_structures(courses, students)
 
-    status, obj = solve(students, time_limit_s=15.0)
+    status, obj, scheduled_sections, room_assignments = solve(courses, students, rooms_by_dept, time_limit_s=15.0)
     # convert assigned course codes to Class objects (use course name for display)
     for st in students:
         for i, code in enumerate(st.assignedCourses):
@@ -33,6 +26,18 @@ def main():
             if isinstance(code, str) and code in courses:
                 st.assignedCourses[i] = courses[code]
     print("Solve status:", status)
+    print()
+    # print scheduled sections summary
+    print("=== Scheduled Sections Summary ===")
+    for c_code, blocks in scheduled_sections.items():
+        total = sum(blocks.values())
+        if total > 0:
+            print(f"{c_code}: total sections={total}, by block={blocks}")
+    print()
+    # print a few room assignments
+    print("=== Sample Room Assignments (first 20) ===")
+    for r in room_assignments[:20]:
+        print(r)
     print()
 
     print_master_preview(students, limit=25)
@@ -45,45 +50,89 @@ def main():
     print_one_student(students, student_id=None)
 
 
-def solve(students: list, time_limit_s: float = 15.0):
+def solve(courses: dict, students: list, rooms_by_dept: dict, time_limit_s: float = 15.0):
     model = cp_model.CpModel()
 
     timetables = {}
 
-    # creates variables
+    # creates student assignment variables (student s in block b taking course c)
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
-            course = student.requestedCourses
-            for c in course:
+            for c in student.requestedCourses:
                 timetables[(s, b, c)] = model.NewBoolVar(f"table_s{s}_b{b}_c{c}")
 
-    # constraint 1: student dosent have more than 1 course per block
+    # section distribution variables: how many sections of course c run in block b
+    sections_in_block = {}
+    for c_code, cls in courses.items():
+        for b in range(NUM_BLOCKS):
+            sections_in_block[(c_code, b)] = model.NewIntVar(0, cls.section, f"secs_{c_code}_b{b}")
+
+    # each course must run exactly the declared number of sections across all blocks
+    for c_code, cls in courses.items():
+        model.Add(sum(sections_in_block[(c_code, b)] for b in range(NUM_BLOCKS)) == cls.section)
+
+    # rooms capacity per department: ensure we don't schedule more sections in a block than available rooms
+    rooms_count_by_dept = {d: len(rlist) for d, rlist in rooms_by_dept.items()}
+    for b in range(NUM_BLOCKS):
+        for dept, rcnt in rooms_count_by_dept.items():
+            if rcnt <= 0:
+                # no available rooms info for this department; skip strict room-capacity constraint
+                continue
+            # sum of sections scheduled in block b for courses in this dept <= available rooms
+            model.Add(
+                sum(sections_in_block[(c_code, b)] for c_code, cls in courses.items() if cls.department == dept)
+                <= rcnt
+            )
+
+    # constraint 1: student doesn't have more than 1 course per block
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
             model.AddAtMostOne(timetables[(s, b, c)] for c in student.requestedCourses)
 
-    # constraint 2: course cant appear more than once
+    # constraint 2: a student cannot take the same course more than once across blocks
     for s, student in enumerate(students):
         for c in student.requestedCourses:
             model.AddAtMostOne(timetables[(s, b, c)] for b in range(NUM_BLOCKS))
 
-    # objective
+    # capacity and minimum-fill constraints per course per block
+    for c_code, cls in courses.items():
+        cap = cls.capacity
+        min_per_section = math.ceil(0.5 * cap)
+        for b in range(NUM_BLOCKS):
+            # total students assigned to course c in block b
+            assigned_in_block = sum(timetables[(s, b, c_code)] for s in range(len(students)) if (s, b, c_code) in timetables)
+            # cannot exceed total capacity provided by sections scheduled in this block
+            model.Add(assigned_in_block <= cap * sections_in_block[(c_code, b)])
+            # if sections are scheduled, enforce minimum fill per section (aggregate)
+            model.Add(assigned_in_block >= min_per_section * sections_in_block[(c_code, b)])
+
+    # enforce blocking rules: courses listed in the same simultaneous blocking must have identical section distributions across blocks
+    blocking_groups = load_blocking_rules("DataFiles/Course Blocking Rules.csv")
+    for group in blocking_groups:
+        # only consider codes that exist in courses
+        group_codes = [c for c in group if c in courses]
+        if len(group_codes) < 2:
+            continue
+        first = group_codes[0]
+        for other in group_codes[1:]:
+            for b in range(NUM_BLOCKS):
+                model.Add(sections_in_block[(first, b)] == sections_in_block[(other, b)])
+
+    # objective: maximize number of assigned student-course slots
     model.Maximize(sum(timetables[(s, b, c)] for (s, b, c) in timetables))
 
     # solves
     solver = cp_model.CpSolver()
-    status = solver.solve(model)
+    solver.parameters.max_time_in_seconds = time_limit_s
+    status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError("No feasible solution found.")
+        # return gracefully with empty scheduling info
+        return status, 0.0, {}, []
 
-    # write solution back into YOUR Student objects
+    # write solution back into Student objects (course codes per block)
     for i, st in enumerate(students):
         st.assignedCourses = [None] * NUM_BLOCKS
-        m = len(st.requestedCourses)
-        if m == 0:
-            continue
-
         for b in range(NUM_BLOCKS):
             chosen = None
             for c in st.requestedCourses:
@@ -92,7 +141,35 @@ def solve(students: list, time_limit_s: float = 15.0):
                     break
             st.assignedCourses[b] = chosen
 
-    return status, solver.ObjectiveValue()
+    # extract sections_in_block values and assign concrete room numbers greedily
+    scheduled_sections = {}
+    for c_code, cls in courses.items():
+        scheduled_sections[c_code] = {}
+        for b in range(NUM_BLOCKS):
+            cnt = solver.Value(sections_in_block[(c_code, b)])
+            scheduled_sections[c_code][b] = cnt
+
+    # assign rooms per department per block
+    room_assignments = []  # tuples (course_code, block, section_index, room)
+    used_rooms = {b: set() for b in range(NUM_BLOCKS)}
+    for c_code, blocks in scheduled_sections.items():
+        dept = courses[c_code].department
+        available_rooms = list(rooms_by_dept.get(dept, []))
+        for b, cnt in blocks.items():
+            for sec_idx in range(cnt):
+                # pick first unused room for this block
+                room = None
+                for r in available_rooms:
+                    if r not in used_rooms[b]:
+                        room = r
+                        used_rooms[b].add(r)
+                        break
+                if room is None:
+                    room = f"UNASSIGNED-{dept}-{b}-{sec_idx}"
+                room_assignments.append((c_code, b, sec_idx, room))
+
+    # return status, objective, scheduled_sections, room assignments
+    return status, solver.ObjectiveValue(), scheduled_sections, room_assignments
 
 
 def load_courses():
@@ -134,6 +211,50 @@ def load_courses():
                 courses[code].print()
                 print(code)
     return courses
+
+
+def load_rooms(rooms_csv_path: str):
+    rooms_by_dept = {}
+    try:
+        with open(rooms_csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                dept = (row.get("Department") or "").strip()
+                room = (row.get("Num") or "").strip()
+                if not dept or not room:
+                    continue
+                rooms_by_dept.setdefault(dept, []).append(room)
+    except FileNotFoundError:
+        return {}
+    return rooms_by_dept
+
+
+def load_blocking_rules(blocking_csv_path: str):
+    groups = []
+    try:
+        with open(blocking_csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if not row or len(row) < 3:
+                    continue
+                key = (row[1] or "").strip()
+                text = (row[2] or "").strip()
+                if key != "Course - Blocking":
+                    continue
+                # expect text like: Schedule A, B, C in a Simultaneous blocking
+                if "Schedule" in text:
+                    try:
+                        start = text.index("Schedule") + len("Schedule")
+                        end = text.index(" in ") if " in " in text else len(text)
+                        codes_part = text[start:end].strip()
+                        codes = [c.strip().strip(' ,') for c in codes_part.split(",") if c.strip()]
+                        if codes:
+                            groups.append(codes)
+                    except ValueError:
+                        continue
+    except FileNotFoundError:
+        return []
+    return groups
 
 
 def load_students(student_csv_path: str):
