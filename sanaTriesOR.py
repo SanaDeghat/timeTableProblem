@@ -270,6 +270,7 @@ def export_courses_by_block_csv(courses_by_block: dict, out_path: str):
 
 
 def metrics(students: list, objective_value: float):
+    # Basic counts
     total_requests = sum(len(st.requestedCourses) for st in students)
     placed = sum(1 for st in students for c in st.assignedCourses if c is not None)
 
@@ -278,23 +279,89 @@ def metrics(students: list, objective_value: float):
     full = sum(1 for st in students if sum(1 for c in st.assignedCourses if c is not None) == NUM_BLOCKS)
     pct_full = (full / len(students) * 100.0) if students else 0.0
 
-    half = 0
+    # Student-level conflicts: same class assigned multiple times to same student
+    student_conflicts = 0
     for st in students:
-        req = len(st.requestedCourses)
-        if req == 0:
-            continue
-        placed_st = sum(1 for c in st.assignedCourses if c is not None)
-        if placed_st >= 0.5 * req:
-            half += 1
-    pct_half = (half / len(students) * 100.0) if students else 0.0
+        assigned_codes = []
+        for c in st.assignedCourses:
+            if c is None:
+                continue
+            code = c.code if hasattr(c, 'code') else str(c)
+            assigned_codes.append(code)
+        from collections import Counter
+        cnt = Counter(assigned_codes)
+        for code, occur in cnt.items():
+            if occur > 1:
+                student_conflicts += (occur - 1)
 
-    print("=== Basic Metrics (Early Evaluation Only) ===")
-    print("Optimization score:", objective_value)
-    print("Total requested courses:", total_requests)
-    print("Total placed blocks:", placed)
-    print(f"% requests placed: {pct_requests_placed:.2f}%")
-    print(f"% students with 8/8 blocks filled: {pct_full:.2f}%")
-    print(f"% students with >=50% requests placed: {pct_half:.2f}%")
+    # Class assignments aggregated
+    class_assignments = {}  # code -> list of (student_id, block)
+    for st in students:
+        for b in range(NUM_BLOCKS):
+            c = st.assignedCourses[b]
+            if c is None:
+                continue
+            code = c.code if hasattr(c, 'code') else str(c)
+            class_assignments.setdefault(code, []).append((st.id, b))
+
+    # Overfilled classes: compare assigned count to Class.capacity when available
+    overfilled_count = 0
+    balanced_count = 0
+    for code, assignments in class_assignments.items():
+        total_assigned = len(assignments)
+        # try to find a Class object to inspect capacity and per-block distribution
+        sample_obj = None
+        for st in students:
+            for c in st.assignedCourses:
+                if c is None:
+                    continue
+                ccode = c.code if hasattr(c, 'code') else str(c)
+                if ccode == code:
+                    sample_obj = c
+                    break
+            if sample_obj:
+                break
+
+        # overfilled: if capacity available and exceeded, count it
+        if sample_obj and hasattr(sample_obj, 'capacity') and isinstance(sample_obj.capacity, int):
+            cap = sample_obj.capacity
+            if cap > 0 and total_assigned > cap:
+                overfilled_count += 1
+
+        # Balanced distribution across blocks: award +1 if distribution across blocks is balanced
+        block_counts = [0] * NUM_BLOCKS
+        for (_sid, b) in assignments:
+            if 0 <= b < NUM_BLOCKS:
+                block_counts[b] += 1
+        if assignments:
+            # consider blocks with zeros; check max-min <= 1 among blocks
+            if max(block_counts) - min(block_counts) <= 1:
+                balanced_count += 1
+
+    # Room-based metrics not available: default to 0 (requires room data on Class objects)
+    room_conflicts = 0
+    invalid_room_assignments = 0
+
+    # Scoring rules
+    score_requested_placed = placed * 10
+    score_full_timetables = full * 50
+    score_room_conflicts = -1000 * room_conflicts
+    score_student_conflicts = -1000 * student_conflicts
+    score_invalid_room = -500 * invalid_room_assignments
+    score_overfilled = -1000 * overfilled_count
+    score_balanced = 1 * balanced_count
+
+    total_score = (
+        score_requested_placed
+        + score_full_timetables
+        + score_room_conflicts
+        + score_student_conflicts
+        + score_invalid_room
+        + score_overfilled
+        + score_balanced
+    )
+
+    print("Optimization Score:", total_score)
     print()
 
 
