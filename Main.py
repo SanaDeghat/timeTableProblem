@@ -14,7 +14,7 @@ def main():
 
     print_data_structures(courses, students)
 
-    status, obj = solve(students, time_limit_s=15.0)
+    status, obj = solve(students, courses, time_limit_s=15.0)
     # convert assigned course codes to Class objects (use course name for display)
     for st in students:
         for i, code in enumerate(st.assignedCourses):
@@ -37,10 +37,11 @@ def main():
     print_one_student(students, student_id=None)
 
 
-def solve(students: list, time_limit_s: float = 15.0):
+def solve(students: list, courses : dict, time_limit_s: float = 15.0):
     model = cp_model.CpModel()
 
     timetables = {}
+    course_in_block = {}
 
     # creates variables
     for s, student in enumerate(students):
@@ -48,6 +49,11 @@ def solve(students: list, time_limit_s: float = 15.0):
             course = student.requestedCourses
             for c in course:
                 timetables[(s, b, c)] = model.NewBoolVar(f"table_s{s}_b{b}_c{c}")
+
+    for c in courses:
+        for b in range(NUM_BLOCKS):
+            course_in_block[(c, b)] = model.new_bool_var(f"course_{c}_block_{b}")
+
 
     # constraint 1: student dosent have more than 1 course per block
     for s, student in enumerate(students):
@@ -58,6 +64,41 @@ def solve(students: list, time_limit_s: float = 15.0):
     for s, student in enumerate(students):
         for c in student.requestedCourses:
             model.AddAtMostOne(timetables[(s, b, c)] for b in range(NUM_BLOCKS))
+
+    for s, student in enumerate(students):
+        for b in range(NUM_BLOCKS):
+            for c in student.requestedCourses:
+                if c in courses:
+                    model.AddImplication(
+                        timetables[(s, b, c)],
+                        course_in_block[(c, b)]
+                    )
+    
+    # limit number of sections per course
+    for c, course_obj in courses.items():
+        max_sections = course_obj.section
+
+        model.Add(
+            sum(course_in_block[(c, b)] for b in range(NUM_BLOCKS)) <= max_sections
+        )
+
+    # # no more than the max # of students per block
+    # for c, course_obj in courses.items():
+    #     max_sections = course_obj.section
+
+    #     model.Add(
+    #         sum(course_in_block[(c, b)] for b in range(NUM_BLOCKS)) <= max_sections
+    #     )
+
+
+    for s, student in enumerate(students):
+        for b in range(NUM_BLOCKS):
+            for c in student.requestedCourses:
+                if c in courses:
+                    model.AddImplication(
+                        timetables[(s, b, c)],
+                        course_in_block[(c, b)]
+                    )
 
     # objective
     model.Maximize(sum(timetables[(s, b, c)] for (s, b, c) in timetables))
