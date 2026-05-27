@@ -21,7 +21,7 @@ def main():
     print_data_structures(courses, students)
 
     status, obj, course_block_index, assignment = solve(
-        students, courses, blocking_rules, time_limit_s=30.0
+        students, courses, blocking_rules, time_limit_s=120
     )
     print("Solve status:", status)
     print()
@@ -51,7 +51,7 @@ def main():
     print_one_student(students, section_rooms, student_id=None)
 
 
-def solve(students: list, courses: dict, blocking_rules: list, time_limit_s: float = 15.0):
+def solve(students: list, courses: dict, blocking_rules: list, time_limit_s: float = 5.0):
     model = cp_model.CpModel()
 
     requested_codes = set()
@@ -522,12 +522,7 @@ def metrics(
     print("Total sections:", section_counts)
     print("Full sections:", full_sections)
     print("Sections < 50% enrollment:", half_empty_sections)
-    print("Enrollment by section:")
-    for sec_id, sec_info in sorted(sections.items()):
-        enrolled = len(section_enrollments.get(sec_id, []))
-        print(
-            f"  {sec_id} ({sec_info['course']}, block {sec_info['block'] + 1}): {enrolled}"
-        )
+
     print()
 
     print("=== Timetable Metrics ===")
