@@ -10,18 +10,39 @@ from Class import Class
 
 
 NUM_BLOCKS = 8
+SMALL_CAPACITY_KEYWORDS = (
+    "science",
+    "lab",
+    "chem",
+    "physics",
+    "auto",
+    "automotive",
+    "wood",
+    "robot",
+    "robotics",
+    "comp sci",
+    "computer science",
+)
 
 
 def main():
-    courses = load_courses("DataFiles/Course Tally.csv")
+    courses = load_courses("DataFiles/Course Number of Sections.csv")
     students = load_students("DataFiles/cleanedstudentrequests.csv")
-    blocking_rules = load_blocking_rules("DataFiles/Course Blocking Rules.csv")
+    blocking_rules = load_blocking_rules("DataFiles/course Simultaneous Blocking.csv")
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
+    outside_timetable_courses = load_outside_timetable_courses(
+        "DataFiles/Outside Timetable Courses.csv",
+        courses,
+    )
 
     print_data_structures(courses, students)
 
     status, obj, course_block_index, assignment = solve(
-        students, courses, blocking_rules, time_limit_s=120
+        students,
+        courses,
+        blocking_rules,
+        outside_timetable_courses=outside_timetable_courses,
+        time_limit_s=10.0,
     )
     print("Solve status:", status)
     print()
@@ -51,8 +72,16 @@ def main():
     print_one_student(students, section_rooms, student_id=None)
 
 
-def solve(students: list, courses: dict, blocking_rules: list, time_limit_s: float = 5.0):
+def solve(
+    students: list,
+    courses: dict,
+    blocking_rules: list,
+    outside_timetable_courses: set | None = None,
+    time_limit_s: float = 5.0,
+):
     model = cp_model.CpModel()
+
+    outside_timetable_courses = outside_timetable_courses or set()
 
     requested_codes = set()
     for st in students:
@@ -67,11 +96,11 @@ def solve(students: list, courses: dict, blocking_rules: list, time_limit_s: flo
                 department="Unknown",
                 requestedPrimary=0,
                 requestedAlt=0,
-                capacity=30,
+                capacity=max_capacity_for_course(code, code),
                 section=1,
             )
 
-    course_codes = sorted(requested_codes)
+    course_codes = sorted(c for c in requested_codes if c not in outside_timetable_courses)
 
     course_block = {}
     course_block_index = {}
@@ -205,26 +234,70 @@ def load_courses(course_csv_path: str):
     with open(course_csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f)
         for row in reader:
-            if not row or len(row) < 3:
+            if not row or len(row) < 5:
                 continue
             code = (row[1] or "").strip() if len(row) > 1 else ""
             description = (row[2] or "").strip() if len(row) > 2 else ""
-            department = (row[3] or "").strip() if len(row) > 3 else ""
+            section_count = 0
+            for cell in reversed(row):
+                value = (cell or "").strip()
+                if value == "":
+                    continue
+                section_count = _to_int(value)
+                break
 
-            if not code or "-" not in code or code.lower() == "number":
+            if not code or "-" not in code or code.lower() == "course":
                 continue
 
             if code not in courses:
                 courses[code] = Class(
                     code=code,
                     name=description,
-                    department=department,
-                    requestedPrimary=_to_int(row[4] if len(row) > 4 else ""),
-                    requestedAlt=_to_int(row[5] if len(row) > 5 else "") - _to_int(row[4] if len(row) > 4 else ""),
-                    capacity=_to_int(row[6] if len(row) > 6 else ""),
-                    section=_to_int(row[7] if len(row) > 7 else ""),
+                    department="Unknown",
+                    requestedPrimary=0,
+                    requestedAlt=0,
+                    capacity=max_capacity_for_course(code, description),
+                    section=max(section_count, 0),
                 )
     return courses
+
+
+def max_capacity_for_course(code: str, description: str) -> int:
+    normalized = normalize_text(f"{code} {description}")
+    if any(keyword in normalized for keyword in SMALL_CAPACITY_KEYWORDS):
+        return 24
+    return 30
+
+
+def load_outside_timetable_courses(outside_csv_path: str, courses: dict) -> set:
+    outside = set()
+    names_to_codes = {}
+    for code, cls in courses.items():
+        names_to_codes[normalize_text(getattr(cls, "name", ""))] = code
+
+    try:
+        with open(outside_csv_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if not row:
+                    continue
+                entry = (row[0] or "").strip()
+                if not entry or entry.lower() in {"course", "course_code", "course_name"}:
+                    continue
+
+                if entry in courses:
+                    outside.add(entry)
+                    continue
+
+                normalized_entry = normalize_text(entry)
+                if normalized_entry in names_to_codes:
+                    outside.add(names_to_codes[normalized_entry])
+    except FileNotFoundError:
+        return set()
+
+    if outside:
+        print(f"Loaded {len(outside)} outside-timetable courses.")
+    return outside
 
 
 def load_students(student_csv_path: str):
