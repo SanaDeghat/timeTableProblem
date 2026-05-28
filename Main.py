@@ -14,7 +14,7 @@ def main():
 
     print_data_structures(courses, students)
 
-    status, obj = solve(students, courses, time_limit_s=15.0)
+    status, obj = solve(students, courses, time_limit_s=5.0)
     # convert assigned course codes to Class objects (use course name for display)
     for st in students:
         for i, code in enumerate(st.assignedCourses):
