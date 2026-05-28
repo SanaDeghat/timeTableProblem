@@ -35,9 +35,14 @@ def main():
 
 
     print_one_student(students, student_id=None)
+    print()
+
+    export_student_counts_by_block(students, "student_counts_by_block.csv")
+    print("Exported student_counts_by_block.csv")
 
 
-def solve(students: list, courses : dict, time_limit_s: float = 15.0):
+
+def solve(students: list, courses : dict, time_limit_s: float = 5.0):
     model = cp_model.CpModel()
 
     timetables = {}
@@ -73,7 +78,7 @@ def solve(students: list, courses : dict, time_limit_s: float = 15.0):
                         timetables[(s, b, c)],
                         course_in_block[(c, b)]
                     )
-    
+   
     # limit number of sections per course
     for c, course_obj in courses.items():
         max_sections = course_obj.section
@@ -82,14 +87,14 @@ def solve(students: list, courses : dict, time_limit_s: float = 15.0):
             sum(course_in_block[(c, b)] for b in range(NUM_BLOCKS)) <= max_sections
         )
 
-    # # no more than the max # of students per block
-    # for c, course_obj in courses.items():
-    #     max_sections = course_obj.section
-
-    #     model.Add(
-    #         sum(course_in_block[(c, b)] for b in range(NUM_BLOCKS)) <= max_sections
-    #     )
-
+    # no more than the max # of students per block
+    for c in courses:
+        for b in range(NUM_BLOCKS):
+            model.Add(
+                sum(timetables[(s, b, c)]
+                    for s, student in enumerate(students)
+                    if c in student.requestedCourses) <= courses[c].capacity
+            )
 
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
@@ -127,6 +132,52 @@ def solve(students: list, courses : dict, time_limit_s: float = 15.0):
 
     return status, solver.ObjectiveValue()
 
+
+def export_student_counts_by_block(students: list, out_path: str):
+    # counts[block][course] = number of students in that course during that block
+    counts = {}
+
+    for b in range(NUM_BLOCKS):
+        counts[b] = {}
+
+    # count students in each course in each block
+    for st in students:
+        for b, course in enumerate(st.assignedCourses):
+            if course is None:
+                continue
+
+            # if course is a Class object, use its name/code nicely
+            if hasattr(course, "getName"):
+                course_name = course.getName()
+            else:
+                course_name = str(course)
+
+            if course_name not in counts[b]:
+                counts[b][course_name] = 0
+
+            counts[b][course_name] += 1
+
+    # collect all course names that appear anywhere
+    all_courses = set()
+    for b in range(NUM_BLOCKS):
+        all_courses.update(counts[b].keys())
+
+    all_courses = sorted(all_courses)
+
+    # write CSV
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+
+        header = ["Course"] + [f"Block {b + 1}" for b in range(NUM_BLOCKS)]
+        writer.writerow(header)
+
+        for course in all_courses:
+            row = [course]
+
+            for b in range(NUM_BLOCKS):
+                row.append(counts[b].get(course, 0))
+
+            writer.writerow(row)
 
 def load_courses():
     course_csv_path = "DataFiles/Course Tally.csv"
