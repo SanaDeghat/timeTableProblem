@@ -57,7 +57,7 @@ def solve(students: list, courses : dict, time_limit_s: float = 1.0):
 
     for c in courses:
         for b in range(NUM_BLOCKS):
-            course_in_block[(c, b)] = model.new_bool_var(f"course_{c}_block_{b}")
+            course_in_block[(c, b)] = model.NewBoolVar(f"course_{c}_block_{b}")
 
 
     # constraint 1: student dosent have more than 1 course per block
@@ -69,15 +69,6 @@ def solve(students: list, courses : dict, time_limit_s: float = 1.0):
     for s, student in enumerate(students):
         for c in student.requestedCourses:
             model.AddAtMostOne(timetables[(s, b, c)] for b in range(NUM_BLOCKS))
-
-    for s, student in enumerate(students):
-        for b in range(NUM_BLOCKS):
-            for c in student.requestedCourses:
-                if c in courses:
-                    model.AddImplication(
-                        timetables[(s, b, c)],
-                        course_in_block[(c, b)]
-                    )
    
     # limit number of sections per course
     for c, course_obj in courses.items():
@@ -87,23 +78,19 @@ def solve(students: list, courses : dict, time_limit_s: float = 1.0):
             sum(course_in_block[(c, b)] for b in range(NUM_BLOCKS)) <= max_sections
         )
 
-    # no more than the max # of students per block
+
     for c in courses:
         for b in range(NUM_BLOCKS):
-            model.Add(
-                sum(timetables[(s, b, c)]
-                    for s, student in enumerate(students)
-                    if c in student.requestedCourses) <= courses[c].capacity
-            )
-    
-    # no less than 50% of a class
-    for c in courses:
-        for b in range(NUM_BLOCKS):
-            model.Add(
-                sum(timetables[(s, b, c)]
-                    for s, student in enumerate(students)
-                    if c in student.requestedCourses) >= (int) (courses[c].capacity / 2)
-            )
+            enroled = sum(timetables[(s, b, c)]
+                            for s, student in enumerate(students)
+                            if c in student.requestedCourses
+                        )
+            
+            # no more than the max # of students per block(only enforces if the course is in the block)
+            model.Add(enroled <= courses[c].capacity * course_in_block[(c, b)])
+
+            # no less than 50% of a class(only enforces if the course is in the block)
+            model.Add(enroled >= (int) (courses[c].capacity / 2) * course_in_block[(c, b)])
 
 
     for s, student in enumerate(students):
@@ -141,6 +128,8 @@ def solve(students: list, courses : dict, time_limit_s: float = 1.0):
             st.assignedCourses[b] = chosen
 
     return status, solver.ObjectiveValue()
+
+
 
 
 def export_student_counts_by_block(students: list, out_path: str):
