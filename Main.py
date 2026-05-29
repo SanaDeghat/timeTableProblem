@@ -14,7 +14,7 @@ def main():
 
     print_data_structures(courses, students)
 
-    status, obj = solve(students, courses, time_limit_s=5.0)
+    status, obj = solve(students, courses, time_limit_s=1.0)
     # convert assigned course codes to Class objects (use course name for display)
     for st in students:
         for i, code in enumerate(st.assignedCourses):
@@ -26,7 +26,7 @@ def main():
     print()
 
     print_master_preview(students, limit=25)
-    export_master_csv(students, "master_timetable.csv")
+    # export_master_csv(students, "master_timetable.csv")
     print("Exported master_timetable.csv\n")
 
     print_courses_by_block(students)
@@ -42,7 +42,7 @@ def main():
 
 
 
-def solve(students: list, courses : dict, time_limit_s: float = 5.0):
+def solve(students: list, courses : dict, time_limit_s: float = 1.0):
     model = cp_model.CpModel()
 
     timetables = {}
@@ -95,6 +95,16 @@ def solve(students: list, courses : dict, time_limit_s: float = 5.0):
                     for s, student in enumerate(students)
                     if c in student.requestedCourses) <= courses[c].capacity
             )
+    
+    # no less than 50% of a class
+    for c in courses:
+        for b in range(NUM_BLOCKS):
+            model.Add(
+                sum(timetables[(s, b, c)]
+                    for s, student in enumerate(students)
+                    if c in student.requestedCourses) >= (int) (courses[c].capacity / 2)
+            )
+
 
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
