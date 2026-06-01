@@ -39,7 +39,7 @@ def main():
         students,
         courses,
         blocking_rules,
-        time_limit_s=60,
+        time_limit_s=10,
     )
     print("Solve status:", status)
     print()
@@ -82,7 +82,7 @@ def solve(
     students: list,
     courses: dict,
     blocking_rules: list,
-    time_limit_s: float = 20.0,
+    time_limit_s: float = 5.00,
 ):
     model = cp_model.CpModel()
 
@@ -298,7 +298,7 @@ def load_students(student_csv_path: str):
                 alternate_col = None
                 for idx, val in enumerate(row):
                     if (val or "").strip().lower() == "alternate":
-                        alternate_col = idx
+                        alternate_col = idx 
                         break
                 continue
 
@@ -306,8 +306,18 @@ def load_students(student_csv_path: str):
                 course_code = row[0].strip()
                 if "-" in course_code and course_code.upper() != "COURSE":
                     is_alt = False
-                    if alternate_col is not None and len(row) > alternate_col:
-                        is_alt = (row[alternate_col] or "").strip().upper() == "Y"
+                    if alternate_col is not None:
+                        for idx in (alternate_col, alternate_col + 1, alternate_col - 1):
+                            if idx is not None and 0 <= idx < len(row) and (row[idx] or "").strip().upper() == "Y":
+                                is_alt = True
+                                break
+                    else:
+                        # Fallback: scan the tail of the row for a 'Y' flag (robust to misaligned CSV columns)
+                        for cell in row[7: max(8, len(row) - 1)]:
+                            if (cell or "").strip().upper() == "Y":
+                                is_alt = True
+                                break
+
                     if is_alt:
                         current_alternates.append(course_code)
                     else:
@@ -352,12 +362,12 @@ def print_data_structures(courses: dict, students: list):
 
 
 def export_master_csv(students: list, courses: dict, section_rooms: dict, out_path: str):
-    header = ["StudentID", "YOG"] + [f"Block{b+1}" for b in range(NUM_BLOCKS)]
+    header = ["StudentID", "currentGrade"] + [f"Block{b+1}" for b in range(NUM_BLOCKS)]
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(header)
         for st in students:
-            row = [st.id, st.yog]
+            row = [st.id, st.currentGrade]
             for b in range(NUM_BLOCKS):
                 code = st.assignedCourses[b]
                 section_id = st.assignedSections[b]
@@ -378,7 +388,7 @@ def export_master_csv(students: list, courses: dict, section_rooms: dict, out_pa
 
 def print_master_preview(students: list, courses: dict, section_rooms: dict, limit: int = 25):
     print("=== Master Timetable (preview) ===")
-    print("StudentID | YOG | " + " | ".join([f"B{b+1}" for b in range(NUM_BLOCKS)]))
+    print("StudentID | currentGrade | " + " | ".join([f"B{b+1}" for b in range(NUM_BLOCKS)]))
     for st in students[:limit]:
         blocks = []
         for b in range(NUM_BLOCKS):
@@ -393,7 +403,7 @@ def print_master_preview(students: list, courses: dict, section_rooms: dict, lim
             if room:
                 value = f"{value} @ {room}"
             blocks.append(value)
-        print(f"{st.id} | {st.yog} | " + " | ".join(blocks))
+        print(f"{st.id} | {st.currentGrade} | " + " | ".join(blocks))
     if len(students) > limit:
         print(f"... ({len(students) - limit} more students not shown)")
     print()
@@ -629,7 +639,7 @@ def print_one_student(students: list, courses: dict, section_rooms: dict, studen
         st = matches[0]
 
     print("=== Full timetable for one student ===")
-    print(f"Student {st.id} (YOG {st.yog})")
+    print(f"Student {st.id} (grade {st.currentGrade})")
     for b in range(NUM_BLOCKS):
         code = st.assignedCourses[b]
         section_id = st.assignedSections[b]
