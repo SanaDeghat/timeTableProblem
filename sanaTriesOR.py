@@ -39,7 +39,7 @@ def main():
         students,
         courses,
         blocking_rules,
-        time_limit_s=10,
+        time_limit_s=30.00,
     )
     print("Solve status:", status)
     print()
