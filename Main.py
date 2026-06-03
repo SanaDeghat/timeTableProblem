@@ -60,7 +60,7 @@ def main():
 
     print_data_structures(courses, students)
 
-    status, obj, course_block_index, assignment, course_runs = solve(
+    status, obj, course_block_index, assignment = solve(
         students,
         courses,
         blocking_rules,
@@ -77,7 +77,7 @@ def main():
         invalid_room_assignments,
         overfilled_sections,
         underfilled_sections,
-    ) = assign_sections_and_rooms(students, courses, course_block_index, rooms, assignment, course_runs)
+    ) = assign_sections_and_rooms(students, courses, course_block_index, rooms, assignment)
 
     # Export student-level timetables to a distinct file.
     export_master_csv(students, courses, section_rooms, "every_students_timetable.csv")
@@ -108,137 +108,176 @@ def solve(
     students: list,
     courses: dict,
     blocking_rules: list,
-    time_limit_s: float = 5.00,
+    time_limit_s: float = 30.0,
 ):
     model = cp_model.CpModel()
 
-    requested_codes = set()
-    for st in students:
-        requested_codes.update(st.requestedCourses)
-        requested_codes.update(st.alternateCourses)
 
-    for code in list(requested_codes):
-        if code not in courses:
-            courses[code] = Class(
-                code=code,
-                name=code,
-                department=infer_department(code, code),
-                requestedPrimary=0,
-                requestedAlt=0,
-                capacity=max_capacity_for_course(code, code),
-                section=1,
-            )
+    timetables = {}
+    course_in_block = {}
 
-    course_codes = sorted(requested_codes)
 
-    course_block = {}
-    course_block_index = {}
-    for code in course_codes:
-        course_block_index[code] = model.NewIntVar(0, NUM_BLOCKS - 1, f"cblock_{code}")
-        bvars = []
+    # creates variables
+    for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
-            var = model.NewBoolVar(f"course_{code}_b{b}")
-            course_block[(code, b)] = var
-            bvars.append(var)
-        model.Add(sum(bvars) == 1)
-        model.Add(sum(b * course_block[(code, b)] for b in range(NUM_BLOCKS)) == course_block_index[code])
+            course = student.requestedCourses
+            for c in course:
+                timetables[(s, b, c)] = model.NewBoolVar(f"table_s{s}_b{b}_c{c}")
 
-    x = {}
-    for s, st in enumerate(students):
-        all_choices = list(dict.fromkeys(st.requestedCourses + st.alternateCourses))
 
+    for c in courses:
         for b in range(NUM_BLOCKS):
-            for c in all_choices:
-                if c not in course_codes:
+            course_in_block[(c, b)] = model.NewBoolVar(f"course_{c}_block_{b}")
+
+
+
+
+    # constraint 1: student dosent have more than 1 course per block
+    for s, student in enumerate(students):
+        for b in range(NUM_BLOCKS):
+            model.AddAtMostOne(timetables[(s, b, c)] for c in student.requestedCourses)
+
+
+    # constraint 2: course cant appear more than once
+    for s, student in enumerate(students):
+        for c in student.requestedCourses:
+            model.AddAtMostOne(timetables[(s, b, c)] for b in range(NUM_BLOCKS))
+   
+    # constraint 3: limit number of sections per course
+    for c, course_obj in courses.items():
+        max_sections = course_obj.section
+        model.Add(
+            sum(course_in_block[(c, b)] for b in range(NUM_BLOCKS)) <= max_sections
+        )
+
+
+    for c in courses:
+        for b in range(NUM_BLOCKS):
+            enroled = sum(timetables[(s, b, c)]
+                            for s, student in enumerate(students)
+                            if c in student.requestedCourses
+                        )      
+            # constraint 4: no more than the max # of students per block(only enforces if the course is in the block)
+            model.Add(enroled <= courses[c].capacity * course_in_block[(c, b)])
+
+
+            # constraint 5: no less than 50% of a class(only enforces if the course is in the block)
+            model.Add(enroled >= (int) (courses[c].capacity / 2) * course_in_block[(c, b)])
+
+
+    # constraint 6: follows blocking rules
+    for x in blocking_rules:
+
+
+        # courses happen at the same time
+        if x["type"] == "Simultaneous":
+            base = x["courses"][0]
+            for other in x["courses"][1:]:
+                for b in range(NUM_BLOCKS):
+                    try:
+                        model.Add(
+                            course_in_block[(base, b)]
+                            == course_in_block[(other, b)]
+                        )
+                    except:
+                        pass
+       
+        if x["type"] == "Consecutive":
+            for i in range(len(x["courses"]) - 1):
+                c1 = x["courses"][i]
+                c2 = x["courses"][i + 1]
+
+
+                if c1 not in courses or c2 not in courses:
                     continue
-                x[(s, c, b)] = model.NewBoolVar(f"x_s{s}_c{c}_b{b}")
-                model.Add(x[(s, c, b)] <= course_block[(c, b)])
 
+
+                for b in range(NUM_BLOCKS):
+                    # c1 in block b => c2 must be in b-1 or b+1
+                    allowed_blocks = []
+                    if b - 1 >= 0:
+                        allowed_blocks.append(course_in_block[(c2, b - 1)])
+                    if b + 1 < NUM_BLOCKS:
+                        allowed_blocks.append(course_in_block[(c2, b + 1)])
+
+
+                    model.Add(
+                        course_in_block[(c1, b)]
+                        <= sum(allowed_blocks)
+                    )
+
+
+           
+
+
+    # idk implimentation or smt
+    for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
-            model.Add(sum(x[(s, c, b)] for c in all_choices if (s, c, b) in x) <= 1)
+            for c in student.requestedCourses:
+                if c in courses:
+                    model.AddImplication(
+                        timetables[(s, b, c)],
+                        course_in_block[(c, b)]
+                    )
 
-        for c in all_choices:
-            if c not in course_codes:
-                continue
-            model.Add(sum(x[(s, c, b)] for b in range(NUM_BLOCKS)) <= 1)
 
-    # Enrollment bounds at course level, derived from section counts and per-section limits.
-    course_runs_vars = {}
-    for code in course_codes:
-        cap = courses[code].capacity if isinstance(courses[code].capacity, int) and courses[code].capacity > 0 else 30
-        sections = courses[code].section if isinstance(courses[code].section, int) and courses[code].section > 0 else 1
-        total_assigned = sum(x[(s, code, b)] for (s, c, b) in x if c == code)
+    # objective
+    model.Maximize(sum(timetables[(s, b, c)] for (s, b, c) in timetables))
 
-        max_total = cap * sections
-        min_total = int(math.ceil(0.5 * cap)) * sections
 
-        course_runs = model.NewBoolVar(f"course_runs_{code}")
-        course_runs_vars[code] = course_runs
-        model.Add(total_assigned <= max_total * course_runs)
-        model.Add(total_assigned >= min_total * course_runs)
-
-    # Blocking rules from CSV.
-    for rule in blocking_rules:
-        rule_courses = [c for c in rule["courses"] if c in course_codes]
-        if len(rule_courses) < 2:
-            continue
-
-        if rule["type"] == "Simultaneous":
-            base = rule_courses[0]
-            for other in rule_courses[1:]:
-                model.Add(course_block_index[base] == course_block_index[other])
-
-        elif rule["type"] == "NotSimultaneous":
-            for i in range(len(rule_courses)):
-                for j in range(i + 1, len(rule_courses)):
-                    c1 = rule_courses[i]
-                    c2 = rule_courses[j]
-                    for b in range(NUM_BLOCKS):
-                        model.Add(course_block[(c1, b)] + course_block[(c2, b)] <= 1)
-
-        elif rule["type"] == "Consecutive":
-            for i in range(len(rule_courses) - 1):
-                c1 = rule_courses[i]
-                c2 = rule_courses[i + 1]
-                delta = model.NewIntVar(0, NUM_BLOCKS - 1, f"delta_{c1}_{c2}")
-                model.AddAbsEquality(delta, course_block_index[c1] - course_block_index[c2])
-                model.Add(delta == 1)
-
-    objective_terms = []
-    for (s, c, _b), var in x.items():
-        is_alt = c in students[s].alternateCourses
-        weight = 6 if is_alt else 10
-        objective_terms.append(weight * var)
-
-    model.Maximize(sum(objective_terms))
-
+    # solves
     solver = cp_model.CpSolver()
-    if isinstance(time_limit_s, (int, float)) and time_limit_s > 0:
-        solver.parameters.max_time_in_seconds = float(time_limit_s)
-    status = solver.Solve(model)
+    solver.parameters.max_time_in_seconds = 60
+    status = solver.solve(model)
+
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         raise RuntimeError("No feasible solution found.")
 
-    assignment = defaultdict(list)
+
+    # write solution back into YOUR Student objects
     for i, st in enumerate(students):
         st.assignedCourses = [None] * NUM_BLOCKS
-        st.assignedSections = [None] * NUM_BLOCKS
+        m = len(st.requestedCourses)
+        if m == 0:
+            continue
 
-        all_choices = list(dict.fromkeys(st.requestedCourses + st.alternateCourses))
         for b in range(NUM_BLOCKS):
             chosen = None
-            for c in all_choices:
-                if (i, c, b) in x and solver.Value(x[(i, c, b)]) == 1:
+            for c in st.requestedCourses:
+                if solver.Value(timetables[(i, b, c)]) == 1:
                     chosen = c
                     break
             st.assignedCourses[b] = chosen
+   
+    # other stuff
+    assignment = defaultdict(list)
+    course_block_index_value = {}
+
+    for c in courses:
+        for b in range(NUM_BLOCKS):
+            if solver.Value(course_in_block[(c, b)]) == 1:
+                course_block_index_value[c] = b
+                break
+
+    for i, st in enumerate(students):
+        st.assignedCourses = [None] * NUM_BLOCKS
+
+        for b in range(NUM_BLOCKS):
+            chosen = None
+
+            for c in st.requestedCourses:
+                if solver.Value(timetables[(i, b, c)]) == 1:
+                    chosen = c
+                    break
+
+            st.assignedCourses[b] = chosen
+
             if chosen is not None:
                 assignment[chosen].append((st.id, b, i))
 
-    course_block_index_value = {code: solver.Value(course_block_index[code]) for code in course_codes}
-    course_runs_value = {code: int(solver.Value(course_runs_vars[code])) for code in course_codes}
-    return status, solver.ObjectiveValue(), course_block_index_value, assignment, course_runs_value
+    return status, solver.ObjectiveValue(), course_block_index_value, assignment
+
 
 
 def load_course_sections(sections_csv_path: str) -> dict:
