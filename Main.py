@@ -72,7 +72,7 @@ def main():
     blocking_rules = load_blocking_rules("DataFiles/course Simultaneous Blocking.csv")
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
 
-    print_data_structures(courses, students)
+    # print_data_structures(courses, students)
 
     status, obj, course_block_index, assignment = solve(
         students,
@@ -80,8 +80,9 @@ def main():
         blocking_rules,
         time_limit_s=60.00,
     )
-    print("Solve status:", status)
-    print()
+    # print("Solve status:", status)
+    # print()
+
 
     (
         sections,
@@ -122,6 +123,8 @@ def main():
     )
 
     print_students_with_full_requested(students, courses, section_rooms, count=3)
+
+    print(section_rooms)
 
 
 def solve(
@@ -261,7 +264,6 @@ def solve(
                 break
 
     for i, st in enumerate(students):
-        st.assignedCourses = [None] * NUM_BLOCKS
 
         for b in range(NUM_BLOCKS):
             chosen = None
@@ -893,26 +895,34 @@ def load_blocking_rules(blocking_csv_path: str):
     return rules
 
 
-def assign_sections_and_rooms(students, courses, course_block_index, rooms, assignment, course_runs=None):
+def assign_sections_and_rooms(students, courses, course_block_index, rooms, assignment):
+
     sections = {}
     section_enrollments = defaultdict(list)
 
     # Determine active courses: those the solver decided to run (course_runs==1)
-    if course_runs:
-        active_codes = {code for code, val in course_runs.items() if val}
-    else:
-        active_codes = {code for code, entries in assignment.items() if entries}
+    active_codes = {code for code, entries in assignment.items() if entries}
 
     for code in sorted(active_codes):
         if code not in courses or code not in course_block_index:
             continue
 
         course = courses[code]
-
-        section_count = course.section if isinstance(course.section, int) and course.section > 0 else 1
         cap = course.capacity if isinstance(course.capacity, int) and course.capacity > 0 else 30
+        max_sections = course.section if isinstance(course.section, int) and course.section > 0 else 1
 
-        for idx in range(1, section_count + 1):
+        enrolled_count = len(assignment.get(code, []))
+
+        # Only open as many sections as needed to fit students above 50% fill
+        # e.g. 45 students, cap=30 → need 2 sections (each gets ~22, above 15 min)
+        # e.g. 12 students, cap=30 → need 1 section (12 >= 15? no, but 1 is minimum)
+        min_fill = math.ceil(0.5 * cap)
+        sections_needed = max(1, math.ceil(enrolled_count / cap))
+
+        # Never exceed the course's allowed max sections
+        sections_needed = min(sections_needed, max_sections)
+
+        for idx in range(1, sections_needed + 1):
             sec_name = f"S{idx}"
             sec_id = f"{code}-{sec_name}"
             sections[sec_id] = {
@@ -1008,6 +1018,7 @@ def assign_sections_and_rooms(students, courses, course_block_index, rooms, assi
             overfilled_sections += 1
         if cap > 0 and enrolled < math.ceil(0.5 * cap):
             underfilled_sections += 1
+
 
     return (
         sections,
