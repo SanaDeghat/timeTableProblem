@@ -12,6 +12,47 @@ from Class import Class
 
 
 NUM_BLOCKS = 8
+DEPT_KEYWORDS = {
+    "Woodwork":             ["WOODWORK"],
+    "Automotive":           ["AUTOMOTIVE", "ENGINE AND DRIVETRAIN", "TECH ED 9: MECHANICS"],
+    "Power Tech":           ["POWER TECH", "POWER TECHNOLOGY"],
+    "Robotics":             ["ROBOTICS", "ELECTRONICS AND ROBOTI"],
+    "Drafting":             ["DRAFTING"],
+    "Mathematics":          ["CALCULUS", "PRE-CALCULUS", "MATHEMATICS", "STATISTICS",
+                             "FOUNDATIONS OF MATH", "FOUNDATIONS OF MATHEMATICS",
+                             "WORKPLACE MATHEMATICS"],
+    "Resource":             ["LEARNING STRATEGIES", "LEARNING ASSISTANCE", "ELL",
+                             "BEGINNERS ELL", "SPOKEN LANGUAGE"],
+    "Career Centre":        ["CAREER LIFE", "WORK EXPERIENCE", "CO-OP",
+                             "CAREER LIFE CONNECTIONS", "CAREER LIFE EDUCATION"],
+    "Photography":          ["PHOTOGRAPHY"],
+    "IT/3D Animation/Media":["3D ANIMATION", "MEDIA DESIGN", "INFORMATION AND COMMUNICATIONS",
+                             "INFORMATION COMMUNICATIONS"],
+    "Art":                  ["ART STUDIO", "VISUAL ARTS"],
+    "Music":                ["INSTRUMENTAL MUSIC", "CHORAL MUSIC", "CONCERT BAND",
+                             "CONCERT CHOIR", "GUITAR", "JAZZ BAND", "ORCHESTRA"],
+    "PE":                   ["PHYSICAL AND HEALTH EDUCATION", "ACTIVE LIVING",
+                             "YOGA FOR MINDFULNESS", "CROSS TRAINING", "OUTDOOR EDUCATION"],
+    "Dance":                ["DANCE"],
+    "Drama":                ["DRAMA"],
+    "Home Economics":       ["FOOD STUDIES", "TEXTILES", "HOME ECONOMICS"],
+    "Science":              ["CHEMISTRY", "PHYSICS", "BIOLOGY", "SCIENCE",
+                             "ANATOMY AND PHYSIOLOGY", "LIFE SCIENCES",
+                             "ENVIRONMENTAL SCIENCE", "AP PHYSICS"],
+    "Social Studies":       ["SOCIAL STUDIES", "HISTORY", "GEOGRAPHY", "LAW STUDIES",
+                             "CRIMINOLOGY", "ECONOMICS", "PSYCHOLOGY", "SOCIOLOGY",
+                             "COMPARATIVE CULTURES", "CONTEMPORARY INDIGENOUS",
+                             "SOCIAL JUSTICE", "PHYSICAL GEOGRAPHY", "20TH CENTURY",
+                             "EXPLORATIONS IN SOCIAL STUDIES", "E-COMMERCE",
+                             "ACCOUNTING", "MARKETING", "ENTREPRENEURSHIP",
+                             "CAMOSUN COL BUSINESS"],
+    "English":              ["ENGLISH", "COMPOSITION", "LITERARY STUDIES",
+                             "EFP WRITING", "EFP LITERARY", "ENGLISH FIRST PEOPLES",
+                             "ENGLISH STUDIES", "AP ENGLISH", "SCHOLARSHIP PREPARATION"],
+    "CS/Yearbook":          ["COMPUTER SCIENCE", "COMPUTER PROGRAMMING",
+                             "AP COMPUTER SCIENCE", "ENGINEERING"],
+}
+
 SMALL_CAPACITY_KEYWORDS = (
     "science",
     "physics",
@@ -26,6 +67,7 @@ SMALL_CAPACITY_KEYWORDS = (
     "computer science",
     "computer programming",
 )
+
 
 # Courses containing any of these keywords will be excluded from the master timetable
 OUT_OF_TIMETABLE_KEYWORDS = (
@@ -65,6 +107,13 @@ OUT_OF_TIMETABLE_KEYWORDS = (
     "JAZZ"
 )
 
+linear_courses = {
+    "XBA--09C--L",
+    "MMUCB10--L",
+    "MIMCB11--L",
+    "MIMCB12--L",
+}
+
 with open("course_code_names_dict.pkl", "rb") as f:
     course_code_names = pickle.load(f)
 
@@ -77,30 +126,32 @@ def main():
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
 
 
-    status, obj, course_block_index, assignment = solve(
-        students,
-        courses,
-        blocking_rules
-    )
+    # status, obj, course_block_index, assignment = solve(
+    #     students,
+    #     courses,
+    #     blocking_rules
+    # )
 
 
-    # loads variables onto a file
-    with open("solution.pkl", "wb") as f:
-        pickle.dump(
-            (
-                status,
-                obj,
-                course_block_index,
-                assignment
-            ),
-            f
-        )
+    # # loads variables onto a file
+    # with open("solution.pkl", "wb") as f:
+    #     pickle.dump(
+    #         (
+    #             status,
+    #             obj,
+    #             course_block_index,
+    #             assignment
+    #         ),
+    #         f
+    #     )
 
     # gets preloaded variables from a file
     with open("solution.pkl", "rb") as f:
         status, obj, course_block_index, assignment = pickle.load(f)
 
-    create_classes_and_students_file(assignment, blocking_rules, students)
+    create_classes_and_students_file(assignment, blocking_rules, students, rooms)
+
+    # print_timetable_metrics(students, courses, assignment)
 
     # (
     #     sections,
@@ -189,15 +240,21 @@ def solve(
     # constraint 2: course cant appear more than once
     for s, student in enumerate(students):
         for c in student.requestedCourses:
+
             if c not in courses:
                 continue
 
-            model.AddAtMostOne(
+            total = sum(
                 timetables[(s, b, c, sec)]
                 for b in range(NUM_BLOCKS)
                 for sec in range(courses[c].section)
                 if (s, b, c, sec) in timetables
             )
+
+            if c in linear_courses:
+                model.Add(total <= 2)
+            else:
+                model.Add(total <= 1)
    
     # constraint 3: limit number of sections per course
     for c, course_obj in courses.items():
@@ -340,6 +397,32 @@ def solve(
                         c1_in_b <= sum(c2_adjacent)
                     )
 
+    # constraint 7: linear courses, band
+    for s, student in enumerate(students):
+        for c in linear_courses:
+
+            if c not in student.requestedCourses:
+                continue
+
+            if c not in courses:
+                continue
+
+            sem1 = sum(
+                timetables[(s, b, c, sec)]
+                for b in range(0, 4)
+                for sec in range(courses[c].section)
+                if (s, b, c, sec) in timetables
+            )
+
+            sem2 = sum(
+                timetables[(s, b, c, sec)]
+                for b in range(4, 8)
+                for sec in range(courses[c].section)
+                if (s, b, c, sec) in timetables
+            )
+
+            model.Add(sem1 == sem2)
+
     # idk implimentation or smt
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
@@ -451,11 +534,9 @@ def solve(
     return status, solver.ObjectiveValue(), course_block_index_value, assignment
 
 
-def create_classes_and_students_file(assignments, blocking_rules, students):
+def create_classes_and_students_file(assignments, blocking_rules, students, rooms):
 
-    # print(blocking_rules)
 
-    # block, course, section, num people
     section_enrollments = defaultdict(list)
 
     for course in assignments:
@@ -465,17 +546,11 @@ def create_classes_and_students_file(assignments, blocking_rules, students):
     #     print(course, ":", course_code_names[course[0]])
 
     # block -> list of strings
-    blocks = defaultdict(list)
     blocks2 = defaultdict(list)
 
     for (course, sec, block), count in section_enrollments.items():
         label = f"{course_code_names[course]}:({count})"
-        blocks[block].append(label)
         blocks2[block].append((course, count))
-
-    # ensure deterministic ordering
-    for b in blocks:
-        blocks[b].sort()
 
 
     for b in blocks2:
@@ -507,7 +582,6 @@ def create_classes_and_students_file(assignments, blocking_rules, students):
         blocks2[b] = new_block
 
     for b in blocks2:
-        print("Block:", b, "---------------------------------")
         for x in range(len(blocks2[b])):
             if isinstance(blocks2[b][x][0], tuple):
                 courses_tuple, count = blocks2[b][x]
@@ -527,7 +601,9 @@ def create_classes_and_students_file(assignments, blocking_rules, students):
                     count
                 )
 
-            print(blocks2[b][x][0], ":", blocks2[b][x][1])
+    
+    print(blocks2)
+    blocks_rooms = assign_rooms_to_blocks(blocks2, rooms)
 
 
     # writes to file----------------------------------------------
@@ -536,23 +612,95 @@ def create_classes_and_students_file(assignments, blocking_rules, students):
 
     with open("master_timetable2.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-
-        # header
         writer.writerow([f"Block {b+1}" for b in range(max_block)])
-
-        # rows
         for i in range(max_rows):
             row = []
             for b in range(max_block):
                 if i < len(blocks2[b]):
-                    row.append(blocks2[b][i])
+                    course_label, count = blocks2[b][i]
+                    room = blocks_rooms.get((b, course_label), "TBD")
+                    row.append(f"{course_label} ({count}) [{room}]")
                 else:
                     row.append("")
             writer.writerow(row)
     # -----------------------------------------------------------------
 
-    course_seq = load_course_sequencing()
-    print(course_seq)
+
+def get_course_dept(course_name: str) -> str | None:
+    """Return the best-matching room department for a course name, or None."""
+    upper = course_name.upper()
+    for dept, keywords in DEPT_KEYWORDS.items():
+        if any(kw in upper for kw in keywords):
+            return dept
+    return None
+ 
+ 
+def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
+    """
+    Assign a room to every (course_label, count) entry in blocks2.
+ 
+    Parameters
+    ----------
+    blocks2 : dict
+        Mapping of block_index -> list of (course_label, count) tuples,
+        as produced by create_classes_and_students_file.
+    rooms : list[dict]
+        Each entry has keys 'room' (str) and 'department' (str).
+ 
+    Returns
+    -------
+    dict
+        Mapping of (block_index, course_label) -> room_number (str).
+        Unassigned entries get 'TBD'.
+    """
+    # Pre-group rooms by department for quick lookup
+    rooms_by_dept: dict[str, list[str]] = defaultdict(list)
+    all_rooms: list[str] = []
+    for r in rooms:
+        rooms_by_dept[r["department"].strip()].append(r["room"])
+        all_rooms.append(r["room"])
+    open_rooms = rooms_by_dept.get("Open", [])
+ 
+    used_by_block: dict[int, set] = defaultdict(set)
+    result: dict[tuple, str] = {}
+ 
+    for block, entries in blocks2.items():
+        for course_label, _count in entries:
+            dept = get_course_dept(course_label)
+            selected = None
+ 
+            # 1. Try a department-matched room first
+            if dept:
+                for candidate in rooms_by_dept.get(dept, []):
+                    if candidate not in used_by_block[block]:
+                        selected = candidate
+                        break
+ 
+            # 2. Fall back to Open rooms
+            if selected is None:
+                for candidate in open_rooms:
+                    if candidate not in used_by_block[block]:
+                        selected = candidate
+                        break
+ 
+            # 3. Fall back to any remaining room
+            if selected is None:
+                for candidate in all_rooms:
+                    if candidate not in used_by_block[block]:
+                        selected = candidate
+                        break
+ 
+            # 4. Last resort
+            if selected is None:
+                selected = "TBD"
+            else:
+                used_by_block[block].add(selected)
+ 
+            result[(block, course_label)] = selected
+ 
+    return result
+
+
 
 def load_course_sequencing():
     rules = defaultdict(list)
@@ -868,6 +1016,125 @@ def export_master_by_block_csv(
     print(f"Exported {out_path}\n")
 
 
+def print_timetable_metrics(students: list, courses: dict, assignment: dict):
+    """
+    Prints student and enrollment metrics for the timetable.
+    
+    Args:
+        students: List of Student objects with assigned courses
+        courses: Dict of course code -> Class object
+        assignment: Dict mapping (course, section, block) -> list of (student_id, student_index) tuples
+    """
+    
+    total_students = len(students)
+    
+    # ===== STUDENT METRICS =====
+    
+    # % of all requests successfully placed
+    total_requests = sum(len(st.requestedCourses) for st in students)
+    placed_requested = sum(
+        1
+        for st in students
+        for c in st.assignedCourses
+        if c is not None and c in st.requestedCourses
+    )
+    unassigned_requests = max(0, total_requests - placed_requested)
+    pct_requests_placed = (placed_requested / total_requests * 100.0) if total_requests else 0.0
+    
+    # % of students with 8/8 requested courses
+    # % of students with 7-8/8 requested courses
+    # % of students with 8/8 courses (requested or alternate)
+    full_requested = 0
+    seven_plus_requested = 0
+    full_requested_or_alt = 0
+    
+    for st in students:
+        req_hits = sum(1 for c in st.assignedCourses if c is not None and c in st.requestedCourses)
+        any_hits = sum(
+            1
+            for c in st.assignedCourses
+            if c is not None and (c in st.requestedCourses or c in st.alternateCourses)
+        )
+        
+        if req_hits == NUM_BLOCKS:
+            full_requested += 1
+        if req_hits >= NUM_BLOCKS - 1:
+            seven_plus_requested += 1
+        if any_hits == NUM_BLOCKS:
+            full_requested_or_alt += 1
+    
+    pct_full_requested = (full_requested / total_students * 100.0) if total_students else 0.0
+    pct_seven_plus_requested = (seven_plus_requested / total_students * 100.0) if total_students else 0.0
+    pct_full_requested_or_alt = (full_requested_or_alt / total_students * 100.0) if total_students else 0.0
+    
+    # Number of students with timetable conflicts
+    students_with_timetable_conflicts = 0
+    for st in students:
+        non_null = [c for c in st.assignedCourses if c is not None]
+        duplicates = sum(v - 1 for v in Counter(non_null).values() if v > 1)
+        if duplicates > 0:
+            students_with_timetable_conflicts += 1
+    
+    # ===== ENROLLMENT METRICS =====
+    
+    # Build section enrollment data from assignment dict
+    section_enrollments = {}  # (course, section, block) -> [student_ids]
+    for key, students_list in assignment.items():
+        course, section, block = key
+        section_enrollments[key] = students_list
+    
+    # Total number of sections
+    total_sections = len(section_enrollments)
+    
+    # Number of full sections and sections with < 50% enrollment
+    full_sections = 0
+    half_empty_sections = 0
+    
+    for (course, section, block), enrolled_list in section_enrollments.items():
+        if course in courses:
+            capacity = courses[course].capacity
+            enrolled_count = len(enrolled_list)
+            
+            if enrolled_count >= capacity:
+                full_sections += 1
+            if capacity > 0 and enrolled_count < math.ceil(0.5 * capacity):
+                half_empty_sections += 1
+    
+    # ===== PRINT RESULTS =====
+    
+    print("=" * 60)
+    print("STUDENT METRICS")
+    print("=" * 60)
+    print(f"% of all requests successfully placed: {pct_requests_placed:.2f}% ({placed_requested}/{total_requests})")
+    print(f"% of students with 8/8 requested courses: {pct_full_requested:.2f}% ({full_requested}/{total_students})")
+    print(f"% of students with 7-8/8 requested courses: {pct_seven_plus_requested:.2f}% ({seven_plus_requested}/{total_students})")
+    print(f"% of students with 8/8 courses (requested or alternate): {pct_full_requested_or_alt:.2f}% ({full_requested_or_alt}/{total_students})")
+    print(f"Number of students with timetable conflicts: {students_with_timetable_conflicts}")
+    print(f"Number of unassigned course requests: {unassigned_requests}")
+    print()
+    
+    print("=" * 60)
+    print("ENROLLMENT METRICS")
+    print("=" * 60)
+    print(f"Total number of sections: {total_sections}")
+    print(f"Number of full sections: {full_sections}")
+    print(f"Number of sections with less than 50% enrollment: {half_empty_sections}")
+    print()
+    
+    # Detailed enrollment by section
+    print("=" * 60)
+    print("ENROLLMENT BY SECTION")
+    print("=" * 60)
+    for (course, section, block) in sorted(section_enrollments.keys()):
+        enrolled_list = section_enrollments[(course, section, block)]
+        enrolled_count = len(enrolled_list)
+        if course in courses:
+            capacity = courses[course].capacity
+            course_name = courses[course].getName()
+            print(f"{course} {course_name} | Section {section} | Block {block + 1} | Enrollment {enrolled_count}/{capacity}")
+    print()
+
+
 def metrics(
     students: list,
     courses: dict,
@@ -1115,7 +1382,7 @@ def is_out_of_timetable(code: str, description: str) -> bool:
 
 def max_capacity_for_course(code: str, description: str) -> int:
     normalized = normalize_text(f"{code} {description}")
-    if any(keyword in normalized for keyword in SMALL_CAPACITY_KEYWORDS):
+    if any(keyword in normalized for keyword in DEPT_KEYWORDS):
         return 24
     return 30
 
