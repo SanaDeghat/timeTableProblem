@@ -125,11 +125,13 @@ def main():
     blocking_rules = load_blocking_rules("DataFiles/course Simultaneous Blocking.csv")
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
 
+    time_limit = 120  # seconds
 
     # status, obj, course_block_index, assignment = solve(
     #     students,
     #     courses,
-    #     blocking_rules
+    #     blocking_rules,
+    #     time_limit
     # )
 
 
@@ -151,55 +153,30 @@ def main():
 
     create_classes_and_students_file(assignment, blocking_rules, students, rooms)
 
-    # print_timetable_metrics(students, courses, assignment)
+    print_timetable_metrics(
+        students,
+        courses,
+        assignment,
+        obj,
+        course_block_index=course_block_index,
+        blocking_rules=blocking_rules,
+        runtime_seconds=None,
+        room_conflicts=None,
+        invalid_room_assignments=None,
+        time_limit=time_limit,
+    )
 
-    # (
-    #     sections,
-    #     section_enrollments,
-    #     section_rooms,
-    #     room_conflicts,
-    #     invalid_room_assignments,
-    #     overfilled_sections,
-    #     underfilled_sections,
-    # ) = assign_sections_and_rooms(students, courses, course_block_index, rooms, assignment, blocking_rules)
 
-    # # Export student-level timetables to a distinct file.
-    # export_master_csv(students, courses, section_rooms, "every_students_timetable.csv")
-    # print("Exported every_students_timetable.csv\n")
-
-    # # Export course-by-block master timetable (sections + rooms) to master_timetable.csv
-    # export_master_by_block_csv(
-    #     sections,
-    #     courses,
-    #     section_rooms,
-    #     section_enrollments,
-    #     "master_timetable.csv",
-    # )
-
-    # metrics(
-    #     students,
-    #     courses,
-    #     blocking_rules,
-    #     course_block_index,
-    #     sections,
-    #     section_enrollments,
-    #     section_rooms,
-    #     room_conflicts,
-    #     invalid_room_assignments,
-    #     overfilled_sections,
-    #     underfilled_sections,
-    #     obj,
-    # )
-
-    # print_students_with_full_requested(students, courses, section_rooms, count=3)
-
-    # print(section_rooms)
+    # Export student-level timetables to a distinct file.
+    export_master_csv(students, courses, "every_students_timetable.csv")
+    print("Exported every_students_timetable.csv\n")
 
 
 def solve(
     students: list,
     courses: dict,
-    blocking_rules: list
+    blocking_rules: list,
+    time_limit: int,
 ):
     model = cp_model.CpModel()
 
@@ -302,6 +279,7 @@ def solve(
 
     # constraint 5: course sequencing
     course_seq = load_course_sequencing()
+    print(course_seq)
     for before, after_list in course_seq.items():
 
         if before not in courses:
@@ -459,7 +437,7 @@ def solve(
 
     # solves
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 120
+    solver.parameters.max_time_in_seconds = time_limit
     status = solver.solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -625,6 +603,10 @@ def create_classes_and_students_file(assignments, blocking_rules, students, room
             writer.writerow(row)
     # -----------------------------------------------------------------
 
+    print("blocks_rooms:", blocks_rooms)
+    print("blocks_rooms:", blocks2)
+    return blocks_rooms, blocks2
+
 
 def get_course_dept(course_name: str) -> str | None:
     """Return the best-matching room department for a course name, or None."""
@@ -704,29 +686,38 @@ def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
 
 def load_course_sequencing():
     rules = defaultdict(list)
-
     with open("DataFiles/Course Sequencing.csv", newline="", encoding="utf-8") as f:
         reader = csv.reader(f)
-
         for row in reader:
             if not row:
                 continue
 
-            # join row in case of weird CSV splitting
-            text = ",".join(row)
+            # find the cell that contains "before", ignore header junk
+            text = None
+            for cell in row:
+                if "before" in cell:
+                    text = cell.strip().replace('"', '')
+                    break
+            if not text:
+                continue
 
-            # remove keyword
+            # remove "Sequence" keyword
             text = text.replace("Sequence", "").strip()
 
-            # remove surrounding quotes
-            text = text.replace('"', '')
+            # split on "before"
+            if "before" not in text:
+                continue
+            left, _, right = text.partition("before")
 
-            # extract pattern: A before B
-            # also handles commas inside row
-            matches = re.findall(r"([A-Z0-9\-]+)\s+before\s+([A-Z0-9\-]+)", text)
+            before_match = re.search(r"[A-Z0-9][A-Z0-9\-]+", left.strip())
+            if not before_match:
+                continue
+            before_code = before_match.group()
 
-            for a, b in matches:
-                rules[a].append(b)
+            after_codes = re.findall(r"[A-Z0-9][A-Z0-9\-]+", right)
+            for after_code in after_codes:
+                if after_code not in rules[before_code]:
+                    rules[before_code].append(after_code)
 
     return dict(rules)
 
@@ -898,7 +889,7 @@ def print_data_structures(courses: dict, students: list):
     print()
 
 
-def export_master_csv(students: list, courses: dict, section_rooms: dict, out_path: str):
+def export_master_csv(students: list, courses: dict, out_path: str):
     header = ["StudentID", "currentGrade"] + [f"Block{b+1}" for b in range(NUM_BLOCKS)]
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -912,13 +903,10 @@ def export_master_csv(students: list, courses: dict, section_rooms: dict, out_pa
                     row.append("NULL")
                 else:
                     name = courses[code].getName() if code in courses else code
-                    room = section_rooms.get(section_id, "") if section_id else ""
                     if section_id:
                         label = f"{name} ({section_id})"
                     else:
                         label = name
-                    if room:
-                        label = f"{label} @ {room}"
                     row.append(label)
             w.writerow(row)
 
@@ -1016,15 +1004,49 @@ def export_master_by_block_csv(
     print(f"Exported {out_path}\n")
 
 
-def print_timetable_metrics(students: list, courses: dict, assignment: dict):
+def print_timetable_metrics(
+    students: list,
+    courses: dict,
+    assignment: dict,
+    obj: float,
+    course_block_index: dict | None = None,
+    blocking_rules: list | None = None,
+    runtime_seconds: float | None = None,
+    room_conflicts: int | None = None,
+    invalid_room_assignments: int | None = None,
+    section_rooms: dict | None = None,
+    time_limit: int | None = None,
+):
     """
-    Prints student and enrollment metrics for the timetable.
+    Prints student, enrollment, and timetable metrics for the timetable.
     
     Args:
         students: List of Student objects with assigned courses
         courses: Dict of course code -> Class object
         assignment: Dict mapping (course, section, block) -> list of (student_id, student_index) tuples
+        obj: Solver objective value / optimization score
+        course_block_index: Optional mapping of course -> list of (block, section)
+        blocking_rules: Optional list of blocking rules used by the model
+        runtime_seconds: Optional runtime in seconds for timetable generation
+        room_conflicts: Optional precomputed room conflict count
+        invalid_room_assignments: Optional precomputed invalid room assignment count
+        section_rooms: Optional section -> room mapping for room-conflict computation
     """
+    
+    blocking_rules = blocking_rules or []
+    course_block_index = course_block_index or {}
+    section_rooms = section_rooms or {}
+    
+    # Reconstruct student assignments from the assignment dict
+    for st in students:
+        st.assignedCourses = [None] * NUM_BLOCKS
+        st.assignedSections = [None] * NUM_BLOCKS
+    
+    for (course, section, block), student_list in assignment.items():
+        for student_id, student_index in student_list:
+            if 0 <= student_index < len(students):
+                students[student_index].assignedCourses[block] = course
+                students[student_index].assignedSections[block] = (course, section, block)
     
     total_students = len(students)
     
@@ -1069,11 +1091,104 @@ def print_timetable_metrics(students: list, courses: dict, assignment: dict):
     
     # Number of students with timetable conflicts
     students_with_timetable_conflicts = 0
+    student_conflicts = 0
     for st in students:
         non_null = [c for c in st.assignedCourses if c is not None]
         duplicates = sum(v - 1 for v in Counter(non_null).values() if v > 1)
         if duplicates > 0:
             students_with_timetable_conflicts += 1
+            student_conflicts += duplicates
+    
+    # Distribution of classes across blocks
+    classes_per_block = [0] * NUM_BLOCKS
+    if course_block_index:
+        for placements in course_block_index.values():
+            for block, _section in placements:
+                if 0 <= block < NUM_BLOCKS:
+                    classes_per_block[block] += 1
+    else:
+        for _course, _section, block in assignment.keys():
+            if 0 <= block < NUM_BLOCKS:
+                classes_per_block[block] += 1
+    
+    # Blocking rules violations
+    applicable_blocking = 0
+    violated_blocking = 0
+    def _course_blocks(code: str) -> set[int]:
+        if code not in course_block_index:
+            return set()
+        return {block for block, _ in course_block_index[code]}
+    
+    for rule in blocking_rules:
+        rule_courses = [c for c in rule["courses"] if c in course_block_index]
+        if len(rule_courses) < 2:
+            continue
+
+        applicable_blocking += 1
+        if rule["type"] == "Simultaneous":
+            blocks = set()
+            for course in rule_courses:
+                blocks.update(_course_blocks(course))
+            if len(blocks) != 1:
+                violated_blocking += 1
+        elif rule["type"] == "NotSimultaneous":
+            seen = set()
+            conflict = False
+            for course in rule_courses:
+                blocks = _course_blocks(course)
+                if seen.intersection(blocks):
+                    conflict = True
+                    break
+                seen.update(blocks)
+            if conflict:
+                violated_blocking += 1
+        elif rule["type"] == "Consecutive":
+            ok = True
+            for i in range(len(rule_courses) - 1):
+                blocks_a = _course_blocks(rule_courses[i])
+                blocks_b = _course_blocks(rule_courses[i + 1])
+                if not any(b + 1 in blocks_b for b in blocks_a):
+                    ok = False
+                    break
+            if not ok:
+                violated_blocking += 1
+    
+    pct_blocking_violations = (
+        violated_blocking / applicable_blocking * 100.0
+        if applicable_blocking else None
+    )
+    
+    # Sequencing rule violations
+    seq_rules = load_course_sequencing()
+    applicable_sequencing = 0
+    violated_sequencing = 0
+    for st in students:
+        for before, after_list in seq_rules.items():
+            if before not in st.requestedCourses:
+                continue
+            before_block = next(
+                (i for i, c in enumerate(st.assignedCourses) if c == before),
+                None,
+            )
+            if before_block is None:
+                continue
+            for after in after_list:
+                if after not in st.requestedCourses:
+                    continue
+                after_block = next(
+                    (i for i, c in enumerate(st.assignedCourses) if c == after),
+                    None,
+                )
+                if after_block is None:
+                    continue
+                applicable_sequencing += 1
+                if before_block >= after_block:
+                    violated_sequencing += 1
+
+    pct_sequencing_violations = (
+        violated_sequencing / applicable_sequencing * 100.0
+        if applicable_sequencing else None
+    )
     
     # ===== ENROLLMENT METRICS =====
     
@@ -1121,17 +1236,45 @@ def print_timetable_metrics(students: list, courses: dict, assignment: dict):
     print(f"Number of sections with less than 50% enrollment: {half_empty_sections}")
     print()
     
-    # Detailed enrollment by section
+    # # Detailed enrollment by section
+    # print("=" * 60)
+    # print("ENROLLMENT BY SECTION")
+    # print("=" * 60)
+    # for (course, section, block) in sorted(section_enrollments.keys()):
+    #     enrolled_list = section_enrollments[(course, section, block)]
+    #     enrolled_count = len(enrolled_list)
+    #     if course in courses:
+    #         capacity = courses[course].capacity
+    #         course_name = courses[course].getName()
+    #         print(f"{course} {course_name} | Section {section} | Block {block + 1} | Enrollment {enrolled_count}/{capacity}")
+    print()
+
     print("=" * 60)
-    print("ENROLLMENT BY SECTION")
+    print("TIMETABLE METRICS")
     print("=" * 60)
-    for (course, section, block) in sorted(section_enrollments.keys()):
-        enrolled_list = section_enrollments[(course, section, block)]
-        enrolled_count = len(enrolled_list)
-        if course in courses:
-            capacity = courses[course].capacity
-            course_name = courses[course].getName()
-            print(f"{course} {course_name} | Section {section} | Block {block + 1} | Enrollment {enrolled_count}/{capacity}")
+    print(f"Number of room conflicts: {room_conflicts if room_conflicts is not None else '0'}")
+    print(f"Number of student conflicts: {student_conflicts}")
+    print(f"Number of invalid room assignments: {invalid_room_assignments if invalid_room_assignments is not None else '0'}")
+    print(f"Distribution of classes across blocks: {classes_per_block}")
+    if pct_blocking_violations is None:
+        print("% of blocking rules violations: N/A")
+    else:
+        print(
+            f"% of blocking rules violations: {pct_blocking_violations:.2f}% "
+            f"({violated_blocking}/{applicable_blocking})"
+        )
+    if pct_sequencing_violations is None:
+        print("% of sequencing rule violations: N/A")
+    else:
+        print(
+            f"% of sequencing rule violations: {pct_sequencing_violations:.2f}% "
+            f"({violated_sequencing}/{applicable_sequencing})"
+        )
+    if runtime_seconds is None:
+        print(f"Runtime for full timetable generation: {time_limit}s")
+    else:
+        print(f"Runtime for full timetable generation: {runtime_seconds:.2f} seconds")
+    print(f"Optimization score: {obj}")
     print()
 
 
