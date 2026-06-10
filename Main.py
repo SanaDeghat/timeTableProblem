@@ -107,6 +107,7 @@ OUT_OF_TIMETABLE_KEYWORDS = (
     "JAZZ"
 )
 
+# band/pe, ap enlish(english sudies/ap lit), 
 linear_courses = {
     "XBA--09C--L",
     "MMUCB10--L",
@@ -125,33 +126,36 @@ def main():
     blocking_rules = load_blocking_rules("DataFiles/course Simultaneous Blocking.csv")
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
 
-    time_limit = 360  # seconds
+    time_limit = 120  # seconds
 
-    status, obj, course_block_index, assignment = solve(
-        students,
-        courses,
-        blocking_rules,
-        time_limit
-    )
+    # status, obj, course_block_index, assignment = solve(
+    #     students,
+    #     courses,
+    #     blocking_rules,
+    #     time_limit
+    # )
 
 
-    # loads variables onto a file
-    with open("solution.pkl", "wb") as f:
-        pickle.dump(
-            (
-                status,
-                obj,
-                course_block_index,
-                assignment
-            ),
-            f
-        )
+    # # loads variables onto a file
+    # with open("solution.pkl", "wb") as f:
+    #     pickle.dump(
+    #         (
+    #             status,
+    #             obj,
+    #             course_block_index,
+    #             assignment
+    #         ),
+    #         f
+    #     )
 
     # gets preloaded variables from a file
     with open("solution.pkl", "rb") as f:
         status, obj, course_block_index, assignment = pickle.load(f)
 
-    create_classes_and_students_file(assignment, blocking_rules, students, rooms)
+
+    #  returns a dict block, course name: class, num people
+    blocks = create_classes_and_students_file(assignment, blocking_rules, students, rooms)
+
 
     print_timetable_metrics(
         students,
@@ -186,7 +190,7 @@ def solve(
     # creates variables
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
-            for c in student.requestedCourses:
+            for c in student.reqaltCourses:
                 if c not in courses:
                     continue
 
@@ -208,7 +212,7 @@ def solve(
         for b in range(NUM_BLOCKS):
             model.AddAtMostOne(
                 timetables[(s, b, c, sec)]
-                for c in student.requestedCourses
+                for c in student.reqaltCourses
                 if c in courses
                 for sec in range(courses[c].section)
                 if (s, b, c, sec) in timetables
@@ -216,7 +220,7 @@ def solve(
 
     # constraint 2: course cant appear more than once
     for s, student in enumerate(students):
-        for c in student.requestedCourses:
+        for c in student.reqaltCourses:
 
             if c not in courses:
                 continue
@@ -267,7 +271,7 @@ def solve(
                 enrolled = sum(
                     timetables[(s, b, c, sec)]
                     for s, student in enumerate(students)
-                    if c in student.requestedCourses
+                    if c in student.reqaltCourses
                     if (s, b, c, sec) in timetables
                 )
 
@@ -279,7 +283,6 @@ def solve(
 
     # constraint 5: course sequencing
     course_seq = load_course_sequencing()
-    print(course_seq)
     for before, after_list in course_seq.items():
 
         if before not in courses:
@@ -292,10 +295,10 @@ def solve(
 
             for s, student in enumerate(students):
 
-                if before not in student.requestedCourses:
+                if before not in student.reqaltCourses:
                     continue
 
-                if after not in student.requestedCourses:
+                if after not in student.reqaltCourses:
                     continue
 
                 # BEFORE course can only be in semester 1
@@ -375,11 +378,11 @@ def solve(
                         c1_in_b <= sum(c2_adjacent)
                     )
 
-    # constraint 7: linear courses, band
+    # constraint 7: linear courses
     for s, student in enumerate(students):
         for c in linear_courses:
 
-            if c not in student.requestedCourses:
+            if c not in student.reqaltCourses:
                 continue
 
             if c not in courses:
@@ -404,7 +407,7 @@ def solve(
     # idk implimentation or smt
     for s, student in enumerate(students):
         for b in range(NUM_BLOCKS):
-            for c in student.requestedCourses:
+            for c in student.reqaltCourses:
                 if c not in courses:
                     continue
 
@@ -452,7 +455,7 @@ def solve(
             chosen_course = None
             chosen_section = None
 
-            for c in st.requestedCourses:
+            for c in st.reqaltCourses:
                 if c not in courses:
                     continue
 
@@ -487,7 +490,7 @@ def solve(
             chosen_course = None
             chosen_section = None
 
-            for c in st.requestedCourses:
+            for c in st.reqaltCourses:
                 if c not in courses:
                     continue
 
@@ -580,7 +583,6 @@ def create_classes_and_students_file(assignments, blocking_rules, students, room
                 )
 
     
-    print(blocks2)
     blocks_rooms = assign_rooms_to_blocks(blocks2, rooms)
 
 
@@ -603,9 +605,8 @@ def create_classes_and_students_file(assignments, blocking_rules, students, room
             writer.writerow(row)
     # -----------------------------------------------------------------
 
-    print("blocks_rooms:", blocks_rooms)
-    print("blocks_rooms:", blocks2)
-    return blocks_rooms, blocks2
+    # print("blocks_rooms:", blocks_rooms)
+    return blocks_rooms
 
 
 def get_course_dept(course_name: str) -> str | None:
@@ -617,25 +618,9 @@ def get_course_dept(course_name: str) -> str | None:
     return None
  
  
+#  returns a dict block, course name: class, num people
 def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
-    print("rooms: ", rooms)
-    """
-    Assign a room to every (course_label, count) entry in blocks2.
- 
-    Parameters
-    ----------
-    blocks2 : dict
-        Mapping of block_index -> list of (course_label, count) tuples,
-        as produced by create_classes_and_students_file.
-    rooms : list[dict]
-        Each entry has keys 'room' (str) and 'department' (str).
- 
-    Returns
-    -------
-    dict
-        Mapping of (block_index, course_label) -> room_number (str).
-        Unassigned entries get 'TBD'.
-    """
+
     # Pre-group rooms by department for quick lookup
     rooms_by_dept: dict[str, list[str]] = defaultdict(list)
     all_rooms: list[str] = []
@@ -648,6 +633,7 @@ def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
     result: dict[tuple, str] = {}
  
     for block, entries in blocks2.items():
+        # print(entries)
         for course_label, _count in entries:
             dept = get_course_dept(course_label)
             selected = None
@@ -679,7 +665,7 @@ def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
             else:
                 used_by_block[block].add(selected)
  
-            result[(block, course_label)] = selected
+            result[(block, course_label)] = (selected, entries[1][1])
  
     return result
 
