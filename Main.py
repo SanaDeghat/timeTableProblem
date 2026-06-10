@@ -125,27 +125,27 @@ def main():
     blocking_rules = load_blocking_rules("DataFiles/course Simultaneous Blocking.csv")
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
 
-    time_limit = 120  # seconds
+    time_limit = 360  # seconds
 
-    # status, obj, course_block_index, assignment = solve(
-    #     students,
-    #     courses,
-    #     blocking_rules,
-    #     time_limit
-    # )
+    status, obj, course_block_index, assignment = solve(
+        students,
+        courses,
+        blocking_rules,
+        time_limit
+    )
 
 
-    # # loads variables onto a file
-    # with open("solution.pkl", "wb") as f:
-    #     pickle.dump(
-    #         (
-    #             status,
-    #             obj,
-    #             course_block_index,
-    #             assignment
-    #         ),
-    #         f
-    #     )
+    # loads variables onto a file
+    with open("solution.pkl", "wb") as f:
+        pickle.dump(
+            (
+                status,
+                obj,
+                course_block_index,
+                assignment
+            ),
+            f
+        )
 
     # gets preloaded variables from a file
     with open("solution.pkl", "rb") as f:
@@ -618,6 +618,7 @@ def get_course_dept(course_name: str) -> str | None:
  
  
 def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
+    print("rooms: ", rooms)
     """
     Assign a room to every (course_label, count) entry in blocks2.
  
