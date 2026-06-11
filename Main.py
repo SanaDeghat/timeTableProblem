@@ -1180,12 +1180,17 @@ def print_timetable_metrics(
                 half_empty_sections += 1
 
 
-    # calculate room conflicts
+    # calculate room conflicts and invalid room assignments
     rms = {}  # block -> set of rooms used
     room_conflicts = 0
+    invalid_room_assignments = 0
 
-    for (b, course_name) in blocks2:
-        room, num_ppl = blocks2[(b, course_name)]
+    room_dept_by_num = {
+        r["room"]: r["department"]
+        for r in load_rooms("DataFiles/Staff list with rooms.csv")
+    }
+
+    for (b, course_name), (room, num_ppl) in blocks2.items():
         if b not in rms:
             rms[b] = set()
 
@@ -1194,8 +1199,23 @@ def print_timetable_metrics(
         else:
             rms[b].add(room)
 
+        if room == "TBD":
+            invalid_room_assignments += 1
+            continue
 
-    
+        room_department = room_dept_by_num.get(room)
+        if room_department is None:
+            invalid_room_assignments += 1
+            continue
+
+        course_department = get_course_dept(course_name)
+        if course_department is None:
+            continue
+
+        if room_department != "Open" and room_department != course_department:
+            invalid_room_assignments += 1
+
+
     # ===== PRINT RESULTS =====
     
     print("=" * 60)
@@ -1222,7 +1242,7 @@ def print_timetable_metrics(
     print("=" * 60)
     print(f"Number of room conflicts: {room_conflicts if room_conflicts is not None else 'error'}")
     print(f"Number of student conflicts: {student_conflicts}")
-    # print(f"Number of invalid room assignments: {invalid_room_assignments if invalid_room_assignments is not None else '0'}")
+    print(f"Number of invalid room assignments: {invalid_room_assignments if invalid_room_assignments is not None else '0'}")
     print(f"Distribution of classes across blocks: {classes_per_block}")
     if pct_blocking_violations is None:
         print("% of blocking rules violations: N/A")
