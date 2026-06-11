@@ -126,7 +126,7 @@ def main():
     blocking_rules = load_blocking_rules("DataFiles/course Simultaneous Blocking.csv")
     rooms = load_rooms("DataFiles/Staff list with rooms.csv")
 
-    time_limit = 120  # seconds
+    time_limit = 360  # seconds
 
     # status, obj, course_block_index, assignment = solve(
     #     students,
@@ -153,20 +153,18 @@ def main():
         status, obj, course_block_index, assignment = pickle.load(f)
 
 
-    #  returns a dict block, course name: class, num people
+    #  returns a dict (block, course name): (room #, num people)
     blocks = create_classes_and_students_file(assignment, blocking_rules, students, rooms)
-
+    print(blocks)
 
     print_timetable_metrics(
         students,
         courses,
         assignment,
         obj,
+        blocks,
         course_block_index=course_block_index,
         blocking_rules=blocking_rules,
-        runtime_seconds=None,
-        room_conflicts=None,
-        invalid_room_assignments=None,
         time_limit=time_limit,
     )
 
@@ -633,8 +631,9 @@ def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
     result: dict[tuple, str] = {}
  
     for block, entries in blocks2.items():
-        # print(entries)
+        print("entries: ", entries)
         for course_label, _count in entries:
+            print(_count)
             dept = get_course_dept(course_label)
             selected = None
  
@@ -665,7 +664,7 @@ def assign_rooms_to_blocks(blocks2: dict, rooms: list[dict]) -> dict:
             else:
                 used_by_block[block].add(selected)
  
-            result[(block, course_label)] = (selected, entries[1][1])
+            result[(block, course_label)] = (selected, _count)
  
     return result
 
@@ -996,33 +995,11 @@ def print_timetable_metrics(
     courses: dict,
     assignment: dict,
     obj: float,
+    blocks2: dict,
     course_block_index: dict | None = None,
     blocking_rules: list | None = None,
-    runtime_seconds: float | None = None,
-    room_conflicts: int | None = None,
-    invalid_room_assignments: int | None = None,
-    section_rooms: dict | None = None,
     time_limit: int | None = None,
 ):
-    """
-    Prints student, enrollment, and timetable metrics for the timetable.
-    
-    Args:
-        students: List of Student objects with assigned courses
-        courses: Dict of course code -> Class object
-        assignment: Dict mapping (course, section, block) -> list of (student_id, student_index) tuples
-        obj: Solver objective value / optimization score
-        course_block_index: Optional mapping of course -> list of (block, section)
-        blocking_rules: Optional list of blocking rules used by the model
-        runtime_seconds: Optional runtime in seconds for timetable generation
-        room_conflicts: Optional precomputed room conflict count
-        invalid_room_assignments: Optional precomputed invalid room assignment count
-        section_rooms: Optional section -> room mapping for room-conflict computation
-    """
-    
-    blocking_rules = blocking_rules or []
-    course_block_index = course_block_index or {}
-    section_rooms = section_rooms or {}
     
     # Reconstruct student assignments from the assignment dict
     for st in students:
@@ -1201,6 +1178,23 @@ def print_timetable_metrics(
                 full_sections += 1
             if capacity > 0 and enrolled_count < math.ceil(0.5 * capacity):
                 half_empty_sections += 1
+
+
+    # calculate room conflicts
+    rms = {}  # block -> set of rooms used
+    room_conflicts = 0
+
+    for (b, course_name) in blocks2:
+        room, num_ppl = blocks2[(b, course_name)]
+        if b not in rms:
+            rms[b] = set()
+
+        if room in rms[b]:
+            room_conflicts += 1
+        else:
+            rms[b].add(room)
+
+
     
     # ===== PRINT RESULTS =====
     
@@ -1222,26 +1216,13 @@ def print_timetable_metrics(
     print(f"Number of full sections: {full_sections}")
     print(f"Number of sections with less than 50% enrollment: {half_empty_sections}")
     print()
-    
-    # # Detailed enrollment by section
-    # print("=" * 60)
-    # print("ENROLLMENT BY SECTION")
-    # print("=" * 60)
-    # for (course, section, block) in sorted(section_enrollments.keys()):
-    #     enrolled_list = section_enrollments[(course, section, block)]
-    #     enrolled_count = len(enrolled_list)
-    #     if course in courses:
-    #         capacity = courses[course].capacity
-    #         course_name = courses[course].getName()
-    #         print(f"{course} {course_name} | Section {section} | Block {block + 1} | Enrollment {enrolled_count}/{capacity}")
-    print()
 
     print("=" * 60)
     print("TIMETABLE METRICS")
     print("=" * 60)
-    print(f"Number of room conflicts: {room_conflicts if room_conflicts is not None else '0'}")
+    print(f"Number of room conflicts: {room_conflicts if room_conflicts is not None else 'error'}")
     print(f"Number of student conflicts: {student_conflicts}")
-    print(f"Number of invalid room assignments: {invalid_room_assignments if invalid_room_assignments is not None else '0'}")
+    # print(f"Number of invalid room assignments: {invalid_room_assignments if invalid_room_assignments is not None else '0'}")
     print(f"Distribution of classes across blocks: {classes_per_block}")
     if pct_blocking_violations is None:
         print("% of blocking rules violations: N/A")
@@ -1257,10 +1238,8 @@ def print_timetable_metrics(
             f"% of sequencing rule violations: {pct_sequencing_violations:.2f}% "
             f"({violated_sequencing}/{applicable_sequencing})"
         )
-    if runtime_seconds is None:
-        print(f"Runtime for full timetable generation: {time_limit}s")
-    else:
-        print(f"Runtime for full timetable generation: {runtime_seconds:.2f} seconds")
+        
+    print(f"Runtime for full timetable generation: {time_limit}s")
     print(f"Optimization score: {obj}")
     print()
 

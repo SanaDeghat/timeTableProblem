@@ -6,6 +6,7 @@ class Student:
         self.alternateCourses = alternateCourses if alternateCourses is not None else []
         self.assignedCourses = assignedCourses if assignedCourses is not None else [None] * 8
         self.assignedSections = assignedSections if assignedSections is not None else [None] * 8
+        self.reqaltCourses = self.requestedCourses + self.alternateCourses
 
     def print(self):
         print(self.id)
