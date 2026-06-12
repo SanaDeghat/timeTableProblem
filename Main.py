@@ -1027,6 +1027,32 @@ def print_timetable_metrics(
     unassigned_requests = max(0, total_requests - placed_requested)
     pct_requests_placed = (placed_requested / total_requests * 100.0) if total_requests else 0.0
     
+    # % of students with unfulfilled courses
+    student_good_unassigned_sum = 0
+    student_bad_unassigned_sum = 0
+
+
+
+
+    # assign check every student for their unassigned courses and if its less than 2 it's good and if its 3 - 8 it's bad
+    for i, student in enumerate(students):
+        student_unassigned = sum(1 for course in student.requestedCourses if course is not None and course not in student.assignedCourses)
+
+
+
+
+        if (student_unassigned <= 2):
+            student_good_unassigned_sum += 1
+        else:
+            student_bad_unassigned_sum += 1
+
+
+
+
+    student_good_unassigned_percent = student_good_unassigned_sum / (student_bad_unassigned_sum + student_good_unassigned_sum) * 100
+    student_bad_unassigned_percent =  100 - student_good_unassigned_percent
+
+
     # % of students with 8/8 requested courses
     # % of students with 7-8/8 requested courses
     # % of students with 8/8 courses (requested or alternate)
@@ -1216,6 +1242,12 @@ def print_timetable_metrics(
             invalid_room_assignments += 1
 
 
+    # over capacity sections check
+    over_capacity = 0
+    for course_tuple in assignment:
+        if (len(assignment[course_tuple]) > courses[course_tuple[0]].capacity): # check if the number of students in course_tuple is greater than the courses capacity
+            over_capacity += 1
+
     # ===== PRINT RESULTS =====
     
     print("=" * 60)
@@ -1227,6 +1259,8 @@ def print_timetable_metrics(
     print(f"% of students with 8/8 courses (requested or alternate): {pct_full_requested_or_alt:.2f}% ({full_requested_or_alt}/{total_students})")
     print(f"Number of students with timetable conflicts: {students_with_timetable_conflicts}")
     print(f"Number of unassigned course requests: {unassigned_requests}")
+    print(f"% of students with 0-2 unfulfilled courses: {student_good_unassigned_percent:.2f}% ({student_good_unassigned_sum}/{total_students})")
+    print(f"% of students with 3-8 unfulfilled courses: {student_bad_unassigned_percent:.2f}% ({student_bad_unassigned_sum}/{total_students})")
     print()
     
     print("=" * 60)
@@ -1261,6 +1295,30 @@ def print_timetable_metrics(
         
     print(f"Runtime for full timetable generation: {time_limit}s")
     print(f"Optimization score: {obj}")
+
+    print("=" * 60)
+    print("MAJOR PENALTIES")
+    print("=" * 60)
+    print(f"Student double bookings: {student_conflicts}")
+    print(f"Room double bookings: {student_conflicts}")
+    print(f"Over capacity sections: {over_capacity}")
+    print(f"Invalid room assignments: N/A")
+    if pct_blocking_violations is None:
+        print("% of blocking rules violations: N/A")
+    else:
+        print(
+            f"% of blocking rules violations: {pct_blocking_violations:.2f}% "
+            f"({violated_blocking}/{applicable_blocking})"
+        )
+    if pct_sequencing_violations is None:
+        print("% of sequencing rule violations: N/A")
+    else:
+        print(
+            f"% of sequencing rule violations: {pct_sequencing_violations:.2f}% "
+            f"({violated_sequencing}/{applicable_sequencing})"
+        )
+    print(f"linear course violations: N/A")
+
     print()
 
 
